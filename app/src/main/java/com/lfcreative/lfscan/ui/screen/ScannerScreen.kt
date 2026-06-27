@@ -405,7 +405,7 @@ private fun AssetDetailSheet(
     lastEvent: com.lfcreative.lfscan.data.model.InventoryEvent?,
     onDismiss: () -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartialExpansion = true)
+    val sheetState = rememberModalBottomSheetState()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
