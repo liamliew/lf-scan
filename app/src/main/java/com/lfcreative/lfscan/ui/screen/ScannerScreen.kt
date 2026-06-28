@@ -5,9 +5,6 @@ import android.content.Context
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -64,6 +61,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,7 +86,9 @@ import com.lfcreative.lfscan.ui.theme.Blue
 import com.lfcreative.lfscan.ui.theme.Green
 import com.lfcreative.lfscan.ui.theme.Grey
 import com.lfcreative.lfscan.ui.theme.Purple
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,6 +110,10 @@ fun ScannerScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     val modeAccent = modeColor(mode)
+
+    var userTorchEnabled by remember { mutableStateOf(false) }
+    var torchManager by remember { mutableStateOf<TorchManager?>(null) }
+    val vibrationManager = remember { VibrationManager(context) }
 
     // Permissions
     val cameraPermLauncher = rememberLauncherForActivityResult(
@@ -152,26 +156,30 @@ fun ScannerScreen(
         }
     }
 
-    // Flash effect + audio feedback
+    // Flash effect + audio + vibration + torch feedback (all in parallel)
     LaunchedEffect(state.flash) {
         when (state.flash) {
             ScanFlash.FOUND -> {
-                vibrate(context)
-                SoundManager.playGoodScan()
+                launch(Dispatchers.Default) { vibrationManager.goodScan() }
+                launch(Dispatchers.Default) { SoundManager.playGoodScan() }
+                if (!userTorchEnabled) torchManager?.flashGoodScan(this)
                 flashColor = Color(0x9900C853)
                 delay(400)
                 flashColor = null
                 viewModel.clearFlash()
             }
             ScanFlash.NOT_FOUND -> {
-                SoundManager.playUnknownScan()
+                launch(Dispatchers.Default) { vibrationManager.unknownScan() }
+                launch(Dispatchers.Default) { SoundManager.playUnknownScan() }
+                if (!userTorchEnabled) torchManager?.flashUnknownScan(this)
                 flashColor = Color(0x99FF1744)
                 delay(400)
                 flashColor = null
                 viewModel.clearFlash()
             }
             ScanFlash.DUPLICATE -> {
-                SoundManager.playDuplicateScan()
+                launch(Dispatchers.Default) { SoundManager.playDuplicateScan() }
+                // no vibration, no torch flash for duplicate
                 flashColor = Color(0x99FFCA28)
                 delay(300)
                 flashColor = null
@@ -283,8 +291,11 @@ fun ScannerScreen(
                     "camera" -> CameraTopZone(
                         hasCameraPermission = hasCameraPermission,
                         flashColor = flashColor,
+                        torchEnabled = userTorchEnabled,
+                        onTorchToggle = { userTorchEnabled = !userTorchEnabled },
                         onBarcodeDetected = if (mode == "inquiry") viewModel::processInquiryScan
-                                            else viewModel::processScannedCode
+                                            else viewModel::processScannedCode,
+                        onTorchManagerReady = { torchManager = it }
                     )
                     "external", "internal" -> CounterTopZone(
                         count = state.scannedItems.size,
@@ -338,15 +349,36 @@ fun ScannerScreen(
 private fun CameraTopZone(
     hasCameraPermission: Boolean,
     flashColor: Color?,
-    onBarcodeDetected: (String) -> Unit
+    torchEnabled: Boolean,
+    onTorchToggle: () -> Unit,
+    onBarcodeDetected: (String) -> Unit,
+    onTorchManagerReady: (TorchManager) -> Unit
 ) {
-    var torchEnabled by remember { mutableStateOf(false) }
+    val localTorchManager = remember { mutableStateOf<TorchManager?>(null) }
+    val scope = rememberCoroutineScope()
+
+    // Stop strobe when user manually enables the torch so it doesn't conflict
+    LaunchedEffect(torchEnabled) {
+        if (torchEnabled) localTorchManager.value?.stopStrobe()
+    }
 
     if (hasCameraPermission) {
         CameraPreview(
             modifier = Modifier.fillMaxSize(),
             torchEnabled = torchEnabled,
-            onBarcodeDetected = onBarcodeDetected
+            onBarcodeDetected = onBarcodeDetected,
+            onDetecting = { detecting ->
+                if (detecting && !torchEnabled) {
+                    localTorchManager.value?.startDetectingStrobe(scope)
+                } else {
+                    localTorchManager.value?.stopStrobe()
+                }
+            },
+            onCameraReady = { camera ->
+                val manager = TorchManager(camera)
+                localTorchManager.value = manager
+                onTorchManagerReady(manager)
+            }
         )
         // Reticle overlay
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -364,7 +396,7 @@ private fun CameraTopZone(
             contentAlignment = Alignment.TopEnd
         ) {
             IconButton(
-                onClick = { torchEnabled = !torchEnabled },
+                onClick = onTorchToggle,
                 modifier = Modifier
                     .size(40.dp)
                     .background(Color(0x66000000), CircleShape)
@@ -683,18 +715,3 @@ fun modeTitle(mode: String) = when (mode) {
     else        -> "Inquiry"
 }
 
-// ── Vibration ───────────────────────────────────────────────────────────────
-
-@Suppress("DEPRECATION")
-private fun vibrate(context: Context) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val manager =
-            context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-        manager.defaultVibrator.vibrate(
-            VibrationEffect.createOneShot(80, VibrationEffect.DEFAULT_AMPLITUDE)
-        )
-    } else {
-        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        vibrator.vibrate(VibrationEffect.createOneShot(80, VibrationEffect.DEFAULT_AMPLITUDE))
-    }
-}

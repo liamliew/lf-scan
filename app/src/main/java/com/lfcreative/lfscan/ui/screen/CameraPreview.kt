@@ -28,22 +28,85 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+
+// ── Torch Manager ─────────────────────────────────────────────────────────────
+
+class TorchManager(val camera: Camera) {
+    @Volatile private var strobeJob: Job? = null
+    private val isStrobing = AtomicBoolean(false)
+    private val isFlashing = AtomicBoolean(false)
+
+    fun startDetectingStrobe(scope: CoroutineScope) {
+        if (isFlashing.get()) return
+        if (!isStrobing.compareAndSet(false, true)) return
+        strobeJob = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                camera.cameraControl.enableTorch(true)
+                delay(30)
+                camera.cameraControl.enableTorch(false)
+                delay(70)
+            }
+        }
+    }
+
+    fun stopStrobe() {
+        if (!isStrobing.compareAndSet(true, false)) return
+        strobeJob?.cancel()
+        strobeJob = null
+        camera.cameraControl.enableTorch(false)
+    }
+
+    fun flashGoodScan(scope: CoroutineScope) {
+        stopStrobe()
+        isFlashing.set(true)
+        scope.launch(Dispatchers.IO) {
+            camera.cameraControl.enableTorch(true)
+            delay(80)
+            camera.cameraControl.enableTorch(false)
+            isFlashing.set(false)
+        }
+    }
+
+    fun flashUnknownScan(scope: CoroutineScope) {
+        stopStrobe()
+        isFlashing.set(true)
+        scope.launch(Dispatchers.IO) {
+            repeat(2) { i ->
+                camera.cameraControl.enableTorch(true)
+                delay(60)
+                camera.cameraControl.enableTorch(false)
+                if (i < 1) delay(60)
+            }
+            isFlashing.set(false)
+        }
+    }
+}
+
+// ── Camera Preview Composable ─────────────────────────────────────────────────
 
 @Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
     torchEnabled: Boolean = false,
-    onBarcodeDetected: (String) -> Unit
+    onBarcodeDetected: (String) -> Unit,
+    onDetecting: (Boolean) -> Unit = {},
+    onCameraReady: (Camera) -> Unit = {}
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val analyzerExecutor = remember { Executors.newSingleThreadExecutor() }
-    // Camera reference held in state so LaunchedEffect re-fires when it becomes available
     val cameraRef = remember { mutableStateOf<Camera?>(null) }
-    // Always-current callback reference — avoids stale closures without rebinding the camera
     val onBarcodeDetectedState = rememberUpdatedState(onBarcodeDetected)
+    val onDetectingState = rememberUpdatedState(onDetecting)
+    val onCameraReadyState = rememberUpdatedState(onCameraReady)
 
     DisposableEffect(Unit) {
         onDispose { analyzerExecutor.shutdown() }
@@ -58,19 +121,21 @@ fun CameraPreview(
     AndroidView(
         factory = { ctx ->
             val previewView = PreviewView(ctx).apply {
-                // COMPATIBLE forces TextureView instead of SurfaceView.
-                // SurfaceView renders on its own hardware layer and ignores all
-                // Compose clip/draw operations; TextureView is composited normally
-                // and respects clipToBounds() applied at the Compose layer.
+                // COMPATIBLE forces TextureView instead of SurfaceView so Compose
+                // clip modifiers are respected
                 implementationMode = PreviewView.ImplementationMode.COMPATIBLE
             }
             bindCamera(
-                context          = ctx,
-                lifecycleOwner   = lifecycleOwner,
-                previewView      = previewView,
-                analyzerExecutor = analyzerExecutor,
+                context           = ctx,
+                lifecycleOwner    = lifecycleOwner,
+                previewView       = previewView,
+                analyzerExecutor  = analyzerExecutor,
+                onDetecting       = { detecting -> onDetectingState.value(detecting) },
                 onBarcodeDetected = { code -> onBarcodeDetectedState.value(code) },
-                onCameraReady    = { cam -> cameraRef.value = cam }
+                onCameraReady     = { cam ->
+                    cameraRef.value = cam
+                    onCameraReadyState.value(cam)
+                }
             )
             previewView
         },
@@ -83,6 +148,7 @@ private fun bindCamera(
     lifecycleOwner: LifecycleOwner,
     previewView: PreviewView,
     analyzerExecutor: java.util.concurrent.Executor,
+    onDetecting: (Boolean) -> Unit,
     onBarcodeDetected: (String) -> Unit,
     onCameraReady: (Camera) -> Unit
 ) {
@@ -100,7 +166,6 @@ private fun bindCamera(
         val scanner = BarcodeScanning.getClient(options)
 
         // 500 ms cooldown — prevents the same frame being processed ~30× per second
-        // while still feeling instantaneous to the user
         val isProcessing = AtomicBoolean(false)
 
         val analysis = ImageAnalysis.Builder()
@@ -109,7 +174,7 @@ private fun bindCamera(
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
             .build()
         analysis.setAnalyzer(analyzerExecutor) { proxy ->
-            analyzeImage(proxy, scanner) { code ->
+            analyzeImage(proxy, scanner, onDetecting) { code ->
                 if (!isProcessing.getAndSet(true)) {
                     onBarcodeDetected(code)
                     Handler(Looper.getMainLooper()).postDelayed({
@@ -147,13 +212,16 @@ private fun bindCamera(
 private fun analyzeImage(
     proxy: ImageProxy,
     scanner: com.google.mlkit.vision.barcode.BarcodeScanner,
+    onDetecting: (Boolean) -> Unit,
     onResult: (String) -> Unit
 ) {
     val image = proxy.image ?: run { proxy.close(); return }
     val input = InputImage.fromMediaImage(image, proxy.imageInfo.rotationDegrees)
     scanner.process(input)
         .addOnSuccessListener { barcodes ->
+            onDetecting(barcodes.isNotEmpty())
             barcodes.firstOrNull { it.rawValue != null }?.rawValue?.let(onResult)
         }
+        .addOnFailureListener { onDetecting(false) }
         .addOnCompleteListener { proxy.close() }
 }
