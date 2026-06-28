@@ -397,16 +397,16 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_lfcreative_lfscan_ui_screen_PinViewModel = "com.lfcreative.lfscan.ui.screen.PinViewModel";
+      static String com_lfcreative_lfscan_ui_screen_ModeSelectViewModel = "com.lfcreative.lfscan.ui.screen.ModeSelectViewModel";
 
       static String com_lfcreative_lfscan_ui_screen_AssetsViewModel = "com.lfcreative.lfscan.ui.screen.AssetsViewModel";
 
       static String com_lfcreative_lfscan_ui_screen_ScanViewModel = "com.lfcreative.lfscan.ui.screen.ScanViewModel";
 
-      static String com_lfcreative_lfscan_ui_screen_ModeSelectViewModel = "com.lfcreative.lfscan.ui.screen.ModeSelectViewModel";
+      static String com_lfcreative_lfscan_ui_screen_PinViewModel = "com.lfcreative.lfscan.ui.screen.PinViewModel";
 
       @KeepFieldType
-      PinViewModel com_lfcreative_lfscan_ui_screen_PinViewModel2;
+      ModeSelectViewModel com_lfcreative_lfscan_ui_screen_ModeSelectViewModel2;
 
       @KeepFieldType
       AssetsViewModel com_lfcreative_lfscan_ui_screen_AssetsViewModel2;
@@ -415,7 +415,7 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
       ScanViewModel com_lfcreative_lfscan_ui_screen_ScanViewModel2;
 
       @KeepFieldType
-      ModeSelectViewModel com_lfcreative_lfscan_ui_screen_ModeSelectViewModel2;
+      PinViewModel com_lfcreative_lfscan_ui_screen_PinViewModel2;
     }
   }
 
@@ -465,13 +465,16 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
+      static String com_lfcreative_lfscan_ui_screen_PinViewModel = "com.lfcreative.lfscan.ui.screen.PinViewModel";
+
       static String com_lfcreative_lfscan_ui_screen_ScanViewModel = "com.lfcreative.lfscan.ui.screen.ScanViewModel";
 
       static String com_lfcreative_lfscan_ui_screen_ModeSelectViewModel = "com.lfcreative.lfscan.ui.screen.ModeSelectViewModel";
 
       static String com_lfcreative_lfscan_ui_screen_AssetsViewModel = "com.lfcreative.lfscan.ui.screen.AssetsViewModel";
 
-      static String com_lfcreative_lfscan_ui_screen_PinViewModel = "com.lfcreative.lfscan.ui.screen.PinViewModel";
+      @KeepFieldType
+      PinViewModel com_lfcreative_lfscan_ui_screen_PinViewModel2;
 
       @KeepFieldType
       ScanViewModel com_lfcreative_lfscan_ui_screen_ScanViewModel2;
@@ -481,9 +484,6 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
 
       @KeepFieldType
       AssetsViewModel com_lfcreative_lfscan_ui_screen_AssetsViewModel2;
-
-      @KeepFieldType
-      PinViewModel com_lfcreative_lfscan_ui_screen_PinViewModel2;
     }
 
     private static final class SwitchingProvider<T> implements Provider<T> {

@@ -5,7 +5,6 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class Asset(
-    val id: String,
     @SerialName("asset_id") val assetId: String,
     val name: String,
     val type: String,

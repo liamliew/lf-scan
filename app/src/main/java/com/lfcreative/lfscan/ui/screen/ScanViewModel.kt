@@ -171,10 +171,10 @@ class ScanViewModel @Inject constructor(
                 knownItems.forEach { item ->
                     val asset = item.asset!!     // safe — !isUnknown guarantees non-null
                     val (newStatus, eventType) = when (mode) {
-                        "check_out" -> "checked_out" to "check_out"
-                        "check_in"  -> "available"   to "check_in"
-                        "update"    -> asset.status  to "update"
-                        "mark_lost" -> "lost"        to "mark_lost"
+                        "check_out" -> "checked_out" to "checkout"
+                        "check_in"  -> "available"   to "checkin"
+                        "update"    -> asset.status  to "location"
+                        "mark_lost" -> "lost"        to "lost"
                         else        -> asset.status  to "inquiry"
                     }
                     repository.updateAssetStatus(
@@ -190,7 +190,7 @@ class ScanViewModel @Inject constructor(
                     )
                     repository.insertEvent(
                         InventoryEventInsert(
-                            assetId         = asset.id,
+                            assetId         = asset.assetId,
                             eventType       = eventType,
                             performedBy     = performedBy.clerkUserId ?: performedBy.id,
                             performedByName = performedBy.name,

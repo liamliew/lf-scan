@@ -1,8 +1,13 @@
 package com.lfcreative.lfscan.ui.screen
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.util.Size
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
@@ -10,9 +15,11 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -22,27 +29,46 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
+    torchEnabled: Boolean = false,
     onBarcodeDetected: (String) -> Unit
 ) {
-    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val executor = remember { Executors.newSingleThreadExecutor() }
-    val previewView = remember { PreviewView(context) }
+    val analyzerExecutor = remember { Executors.newSingleThreadExecutor() }
+    // Camera reference held in state so LaunchedEffect re-fires when it becomes available
+    val cameraRef = remember { mutableStateOf<Camera?>(null) }
+    // Always-current callback reference — avoids stale closures without rebinding the camera
+    val onBarcodeDetectedState = rememberUpdatedState(onBarcodeDetected)
 
     DisposableEffect(Unit) {
-        onDispose { executor.shutdown() }
+        onDispose { analyzerExecutor.shutdown() }
     }
 
+    // Apply torch state whenever torchEnabled changes OR the camera first becomes available
+    LaunchedEffect(torchEnabled, cameraRef.value) {
+        cameraRef.value?.cameraControl?.enableTorch(torchEnabled)
+    }
+
+    // factory (not update) so bindCamera runs once — torch toggles don't restart the camera
     AndroidView(
-        factory = { previewView },
-        modifier = modifier,
-        update = {
-            bindCamera(context, lifecycleOwner, previewView, executor, onBarcodeDetected)
-        }
+        factory = { ctx ->
+            val previewView = PreviewView(ctx)
+            bindCamera(
+                context          = ctx,
+                lifecycleOwner   = lifecycleOwner,
+                previewView      = previewView,
+                analyzerExecutor = analyzerExecutor,
+                onBarcodeDetected = { code -> onBarcodeDetectedState.value(code) },
+                onCameraReady    = { cam -> cameraRef.value = cam }
+            )
+            previewView
+        },
+        modifier = modifier
     )
 }
 
@@ -50,8 +76,9 @@ private fun bindCamera(
     context: Context,
     lifecycleOwner: LifecycleOwner,
     previewView: PreviewView,
-    executor: java.util.concurrent.Executor,
-    onBarcodeDetected: (String) -> Unit
+    analyzerExecutor: java.util.concurrent.Executor,
+    onBarcodeDetected: (String) -> Unit,
+    onCameraReady: (Camera) -> Unit
 ) {
     val future = ProcessCameraProvider.getInstance(context)
     future.addListener({
@@ -62,41 +89,48 @@ private fun bindCamera(
         }
 
         val options = BarcodeScannerOptions.Builder()
-            .setBarcodeFormats(
-                Barcode.FORMAT_QR_CODE,
-                Barcode.FORMAT_CODE_128,
-                Barcode.FORMAT_CODE_39,
-                Barcode.FORMAT_EAN_13,
-                Barcode.FORMAT_EAN_8,
-                Barcode.FORMAT_DATA_MATRIX
-            )
+            .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
             .build()
         val scanner = BarcodeScanning.getClient(options)
 
-        // Throttle repeated scans of the same code to avoid hammering the DB
-        var lastCode = ""
-        var lastTime = 0L
+        // 500 ms cooldown — prevents the same frame being processed ~30× per second
+        // while still feeling instantaneous to the user
+        val isProcessing = AtomicBoolean(false)
 
         val analysis = ImageAnalysis.Builder()
+            .setTargetResolution(Size(1280, 720))
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
             .build()
-            .also { it.setAnalyzer(executor) { proxy -> analyzeImage(proxy, scanner) { code ->
-                val now = System.currentTimeMillis()
-                if (code != lastCode || now - lastTime > 2000L) {
-                    lastCode = code
-                    lastTime = now
+        analysis.setAnalyzer(analyzerExecutor) { proxy ->
+            analyzeImage(proxy, scanner) { code ->
+                if (!isProcessing.getAndSet(true)) {
                     onBarcodeDetected(code)
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        isProcessing.set(false)
+                    }, 500)
                 }
-            }}}
+            }
+        }
 
         try {
             provider.unbindAll()
-            provider.bindToLifecycle(
+            val camera = provider.bindToLifecycle(
                 lifecycleOwner,
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 preview,
                 analysis
             )
+
+            // Continuous autofocus centred on the frame, re-triggered every 2 s
+            val meteringPoint = previewView.meteringPointFactory.createPoint(0.5f, 0.5f)
+            camera.cameraControl.startFocusingAndMetering(
+                FocusMeteringAction.Builder(meteringPoint, FocusMeteringAction.FLAG_AF)
+                    .setAutoCancelDuration(2, TimeUnit.SECONDS)
+                    .build()
+            )
+
+            onCameraReady(camera)
         } catch (e: Exception) {
             Log.e("CameraPreview", "Bind failed", e)
         }

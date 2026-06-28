@@ -36,6 +36,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FlashOff
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -326,9 +328,12 @@ private fun CameraTopZone(
     flashColor: Color?,
     onBarcodeDetected: (String) -> Unit
 ) {
+    var torchEnabled by remember { mutableStateOf(false) }
+
     if (hasCameraPermission) {
         CameraPreview(
             modifier = Modifier.fillMaxSize(),
+            torchEnabled = torchEnabled,
             onBarcodeDetected = onBarcodeDetected
         )
         // Reticle overlay
@@ -338,6 +343,27 @@ private fun CameraTopZone(
                     .size(240.dp, 140.dp)
                     .border(2.dp, Color.White, RoundedCornerShape(8.dp))
             )
+        }
+        // Torch toggle — top-right corner of the preview
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp),
+            contentAlignment = Alignment.TopEnd
+        ) {
+            IconButton(
+                onClick = { torchEnabled = !torchEnabled },
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(Color(0x66000000), CircleShape)
+            ) {
+                Icon(
+                    imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                    contentDescription = if (torchEnabled) "Turn torch off" else "Turn torch on",
+                    tint = if (torchEnabled) Color(0xFFFFCA28) else Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     } else {
         Box(
