@@ -1,5 +1,6 @@
 package com.lfcreative.lfscan.ui.screen
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -46,6 +47,9 @@ fun CommitResultScreen(
     viewModel: ScanViewModel,
     onBackToMenu: () -> Unit
 ) {
+    // Disable system back on this screen
+    BackHandler(enabled = true) {}
+
     val state by viewModel.state.collectAsState()
     val scale = remember { Animatable(0f) }
 
@@ -60,10 +64,11 @@ fun CommitResultScreen(
     }
 
     val actionLabel = when (mode) {
-        "check_out" -> "checked out"
-        "check_in"  -> "checked in"
-        "update"    -> "updated"
-        else        -> "looked up"
+        "check_out"  -> "Checked Out"
+        "check_in"   -> "Checked In"
+        "update"     -> "Updated"
+        "mark_lost"  -> "Marked Lost"
+        else         -> "Looked Up"
     }
 
     Column(
@@ -78,7 +83,7 @@ fun CommitResultScreen(
         // Animated checkmark
         Box(
             modifier = Modifier
-                .size(80.dp)
+                .size(88.dp)
                 .scale(scale.value)
                 .clip(CircleShape)
                 .background(Green),
@@ -88,32 +93,29 @@ fun CommitResultScreen(
                 Icons.Default.Check,
                 contentDescription = null,
                 tint = Color.White,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(52.dp)
             )
         }
 
         Spacer(Modifier.height(24.dp))
 
-        Text(
-            "Done — $count item${if (count != 1) "s" else ""} processed",
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Text("Done", fontSize = 28.sp, fontWeight = FontWeight.Bold)
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
 
         Text(
-            "All items $actionLabel successfully",
-            fontSize = 14.sp,
+            "$count item${if (count != 1) "s" else ""} processed",
+            fontSize = 15.sp,
             color = Color(0xFF6B7280)
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(32.dp))
 
         LazyColumn(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
+            // ── Committed (known) items ──────────────────────────────────────
             items(state.committedItems) { item ->
                 Row(
                     modifier = Modifier
@@ -122,27 +124,58 @@ fun CommitResultScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column {
-                        Text(
-                            item.asset.assetId,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 14.sp
-                        )
-                        Text(
-                            item.asset.name,
-                            fontSize = 13.sp,
-                            color = Color(0xFF374151)
-                        )
-                    }
                     Text(
-                        actionLabel.replaceFirstChar { it.uppercase() },
-                        fontSize = 12.sp,
+                        item.asset?.name ?: item.rawCode,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1
+                    )
+                    Text(
+                        actionLabel,
+                        fontSize = 13.sp,
                         color = Green,
                         fontWeight = FontWeight.Medium
                     )
                 }
                 HorizontalDivider(color = Color(0xFFF3F4F6))
+            }
+
+            // ── Skipped (unknown) items ──────────────────────────────────────
+            if (state.skippedItems.isNotEmpty()) {
+                item {
+                    Text(
+                        "Skipped (not found)",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = Color(0xFF6B7280),
+                        modifier = Modifier.padding(top = 20.dp, bottom = 6.dp)
+                    )
+                }
+                items(state.skippedItems) { item ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            item.rawCode,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 14.sp,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1
+                        )
+                        Text(
+                            "Not found",
+                            fontSize = 13.sp,
+                            color = Color(0xFFEF4444),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    HorizontalDivider(color = Color(0xFFF3F4F6))
+                }
             }
         }
 
@@ -155,7 +188,7 @@ fun CommitResultScreen(
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Back to menu", fontWeight = FontWeight.SemiBold)
+            Text("Back to Menu", fontWeight = FontWeight.SemiBold)
         }
     }
 }

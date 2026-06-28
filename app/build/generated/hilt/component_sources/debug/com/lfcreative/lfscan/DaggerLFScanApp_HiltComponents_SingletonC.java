@@ -8,6 +8,8 @@ import androidx.lifecycle.SavedStateHandle;
 import androidx.lifecycle.ViewModel;
 import com.lfcreative.lfscan.data.repository.InventoryRepository;
 import com.lfcreative.lfscan.session.SessionDataStore;
+import com.lfcreative.lfscan.ui.screen.AssetsViewModel;
+import com.lfcreative.lfscan.ui.screen.AssetsViewModel_HiltModules;
 import com.lfcreative.lfscan.ui.screen.ModeSelectViewModel;
 import com.lfcreative.lfscan.ui.screen.ModeSelectViewModel_HiltModules;
 import com.lfcreative.lfscan.ui.screen.PinViewModel;
@@ -375,7 +377,7 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
 
     @Override
     public Map<Class<?>, Boolean> getViewModelKeys() {
-      return LazyClassKeyMap.<Boolean>of(MapBuilder.<String, Boolean>newMapBuilder(3).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_ModeSelectViewModel, ModeSelectViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_PinViewModel, PinViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_ScanViewModel, ScanViewModel_HiltModules.KeyModule.provide()).build());
+      return LazyClassKeyMap.<Boolean>of(MapBuilder.<String, Boolean>newMapBuilder(4).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_AssetsViewModel, AssetsViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_ModeSelectViewModel, ModeSelectViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_PinViewModel, PinViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_ScanViewModel, ScanViewModel_HiltModules.KeyModule.provide()).build());
     }
 
     @Override
@@ -395,17 +397,22 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_lfcreative_lfscan_ui_screen_ScanViewModel = "com.lfcreative.lfscan.ui.screen.ScanViewModel";
-
       static String com_lfcreative_lfscan_ui_screen_PinViewModel = "com.lfcreative.lfscan.ui.screen.PinViewModel";
+
+      static String com_lfcreative_lfscan_ui_screen_AssetsViewModel = "com.lfcreative.lfscan.ui.screen.AssetsViewModel";
+
+      static String com_lfcreative_lfscan_ui_screen_ScanViewModel = "com.lfcreative.lfscan.ui.screen.ScanViewModel";
 
       static String com_lfcreative_lfscan_ui_screen_ModeSelectViewModel = "com.lfcreative.lfscan.ui.screen.ModeSelectViewModel";
 
       @KeepFieldType
-      ScanViewModel com_lfcreative_lfscan_ui_screen_ScanViewModel2;
+      PinViewModel com_lfcreative_lfscan_ui_screen_PinViewModel2;
 
       @KeepFieldType
-      PinViewModel com_lfcreative_lfscan_ui_screen_PinViewModel2;
+      AssetsViewModel com_lfcreative_lfscan_ui_screen_AssetsViewModel2;
+
+      @KeepFieldType
+      ScanViewModel com_lfcreative_lfscan_ui_screen_ScanViewModel2;
 
       @KeepFieldType
       ModeSelectViewModel com_lfcreative_lfscan_ui_screen_ModeSelectViewModel2;
@@ -418,6 +425,8 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
     private final ActivityRetainedCImpl activityRetainedCImpl;
 
     private final ViewModelCImpl viewModelCImpl = this;
+
+    private Provider<AssetsViewModel> assetsViewModelProvider;
 
     private Provider<ModeSelectViewModel> modeSelectViewModelProvider;
 
@@ -438,14 +447,15 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
     @SuppressWarnings("unchecked")
     private void initialize(final SavedStateHandle savedStateHandleParam,
         final ViewModelLifecycle viewModelLifecycleParam) {
-      this.modeSelectViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 0);
-      this.pinViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 1);
-      this.scanViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 2);
+      this.assetsViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 0);
+      this.modeSelectViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 1);
+      this.pinViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 2);
+      this.scanViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 3);
     }
 
     @Override
     public Map<Class<?>, javax.inject.Provider<ViewModel>> getHiltViewModelMap() {
-      return LazyClassKeyMap.<javax.inject.Provider<ViewModel>>of(MapBuilder.<String, javax.inject.Provider<ViewModel>>newMapBuilder(3).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_ModeSelectViewModel, ((Provider) modeSelectViewModelProvider)).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_PinViewModel, ((Provider) pinViewModelProvider)).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_ScanViewModel, ((Provider) scanViewModelProvider)).build());
+      return LazyClassKeyMap.<javax.inject.Provider<ViewModel>>of(MapBuilder.<String, javax.inject.Provider<ViewModel>>newMapBuilder(4).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_AssetsViewModel, ((Provider) assetsViewModelProvider)).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_ModeSelectViewModel, ((Provider) modeSelectViewModelProvider)).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_PinViewModel, ((Provider) pinViewModelProvider)).put(LazyClassKeyProvider.com_lfcreative_lfscan_ui_screen_ScanViewModel, ((Provider) scanViewModelProvider)).build());
     }
 
     @Override
@@ -455,20 +465,25 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_lfcreative_lfscan_ui_screen_PinViewModel = "com.lfcreative.lfscan.ui.screen.PinViewModel";
-
       static String com_lfcreative_lfscan_ui_screen_ScanViewModel = "com.lfcreative.lfscan.ui.screen.ScanViewModel";
 
       static String com_lfcreative_lfscan_ui_screen_ModeSelectViewModel = "com.lfcreative.lfscan.ui.screen.ModeSelectViewModel";
 
-      @KeepFieldType
-      PinViewModel com_lfcreative_lfscan_ui_screen_PinViewModel2;
+      static String com_lfcreative_lfscan_ui_screen_AssetsViewModel = "com.lfcreative.lfscan.ui.screen.AssetsViewModel";
+
+      static String com_lfcreative_lfscan_ui_screen_PinViewModel = "com.lfcreative.lfscan.ui.screen.PinViewModel";
 
       @KeepFieldType
       ScanViewModel com_lfcreative_lfscan_ui_screen_ScanViewModel2;
 
       @KeepFieldType
       ModeSelectViewModel com_lfcreative_lfscan_ui_screen_ModeSelectViewModel2;
+
+      @KeepFieldType
+      AssetsViewModel com_lfcreative_lfscan_ui_screen_AssetsViewModel2;
+
+      @KeepFieldType
+      PinViewModel com_lfcreative_lfscan_ui_screen_PinViewModel2;
     }
 
     private static final class SwitchingProvider<T> implements Provider<T> {
@@ -492,14 +507,17 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
       @Override
       public T get() {
         switch (id) {
-          case 0: // com.lfcreative.lfscan.ui.screen.ModeSelectViewModel 
+          case 0: // com.lfcreative.lfscan.ui.screen.AssetsViewModel 
+          return (T) new AssetsViewModel(singletonCImpl.inventoryRepositoryProvider.get());
+
+          case 1: // com.lfcreative.lfscan.ui.screen.ModeSelectViewModel 
           return (T) new ModeSelectViewModel(singletonCImpl.sessionDataStoreProvider.get());
 
-          case 1: // com.lfcreative.lfscan.ui.screen.PinViewModel 
+          case 2: // com.lfcreative.lfscan.ui.screen.PinViewModel 
           return (T) new PinViewModel(singletonCImpl.inventoryRepositoryProvider.get(), singletonCImpl.sessionDataStoreProvider.get());
 
-          case 2: // com.lfcreative.lfscan.ui.screen.ScanViewModel 
-          return (T) new ScanViewModel(singletonCImpl.inventoryRepositoryProvider.get(), singletonCImpl.sessionDataStoreProvider.get());
+          case 3: // com.lfcreative.lfscan.ui.screen.ScanViewModel 
+          return (T) new ScanViewModel(singletonCImpl.inventoryRepositoryProvider.get(), singletonCImpl.sessionDataStoreProvider.get(), ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
 
           default: throw new AssertionError(id);
         }
@@ -581,9 +599,9 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
 
     private final SingletonCImpl singletonCImpl = this;
 
-    private Provider<SessionDataStore> sessionDataStoreProvider;
-
     private Provider<InventoryRepository> inventoryRepositoryProvider;
+
+    private Provider<SessionDataStore> sessionDataStoreProvider;
 
     private SingletonCImpl(ApplicationContextModule applicationContextModuleParam) {
       this.applicationContextModule = applicationContextModuleParam;
@@ -593,8 +611,8 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
 
     @SuppressWarnings("unchecked")
     private void initialize(final ApplicationContextModule applicationContextModuleParam) {
-      this.sessionDataStoreProvider = DoubleCheck.provider(new SwitchingProvider<SessionDataStore>(singletonCImpl, 0));
-      this.inventoryRepositoryProvider = DoubleCheck.provider(new SwitchingProvider<InventoryRepository>(singletonCImpl, 1));
+      this.inventoryRepositoryProvider = DoubleCheck.provider(new SwitchingProvider<InventoryRepository>(singletonCImpl, 0));
+      this.sessionDataStoreProvider = DoubleCheck.provider(new SwitchingProvider<SessionDataStore>(singletonCImpl, 1));
     }
 
     @Override
@@ -630,11 +648,11 @@ public final class DaggerLFScanApp_HiltComponents_SingletonC {
       @Override
       public T get() {
         switch (id) {
-          case 0: // com.lfcreative.lfscan.session.SessionDataStore 
-          return (T) new SessionDataStore(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
-
-          case 1: // com.lfcreative.lfscan.data.repository.InventoryRepository 
+          case 0: // com.lfcreative.lfscan.data.repository.InventoryRepository 
           return (T) new InventoryRepository();
+
+          case 1: // com.lfcreative.lfscan.session.SessionDataStore 
+          return (T) new SessionDataStore(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
 
           default: throw new AssertionError(id);
         }

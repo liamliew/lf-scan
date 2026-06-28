@@ -1,5 +1,6 @@
 package com.lfcreative.lfscan;
 
+import com.lfcreative.lfscan.ui.screen.AssetsViewModel_HiltModules;
 import com.lfcreative.lfscan.ui.screen.ModeSelectViewModel_HiltModules;
 import com.lfcreative.lfscan.ui.screen.PinViewModel_HiltModules;
 import com.lfcreative.lfscan.ui.screen.ScanViewModel_HiltModules;
@@ -153,6 +154,7 @@ public final class LFScanApp_HiltComponents {
 
   @Subcomponent(
       modules = {
+          AssetsViewModel_HiltModules.KeyModule.class,
           HiltWrapper_ActivityRetainedComponentManager_LifecycleModule.class,
           HiltWrapper_SavedStateHandleModule.class,
           ActivityCBuilderModule.class,
@@ -195,6 +197,7 @@ public final class LFScanApp_HiltComponents {
 
   @Subcomponent(
       modules = {
+          AssetsViewModel_HiltModules.BindsModule.class,
           HiltWrapper_HiltViewModelFactory_ViewModelModule.class,
           ModeSelectViewModel_HiltModules.BindsModule.class,
           PinViewModel_HiltModules.BindsModule.class,

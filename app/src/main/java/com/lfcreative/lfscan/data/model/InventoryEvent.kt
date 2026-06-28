@@ -21,5 +21,8 @@ data class InventoryEventInsert(
     @SerialName("event_type") val eventType: String,
     @SerialName("performed_by") val performedBy: String,
     @SerialName("performed_by_name") val performedByName: String,
-    @SerialName("location_id") val locationId: String? = null
+    @SerialName("location_id") val locationId: String? = null,
+    @SerialName("gps_lat") val gpsLat: Double? = null,
+    @SerialName("gps_lng") val gpsLng: Double? = null,
+    @SerialName("gps_address") val gpsAddress: String? = null
 )

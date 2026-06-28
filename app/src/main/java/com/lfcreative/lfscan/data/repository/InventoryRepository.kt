@@ -24,6 +24,11 @@ class InventoryRepository @Inject constructor() {
             .select { filter { eq("asset_id", assetId) } }
             .decodeSingleOrNull<Asset>()
 
+    suspend fun getAllAssets(): List<Asset> =
+        supabase.from("inventory_assets")
+            .select()
+            .decodeList<Asset>()
+
     suspend fun getLocations(): List<Location> =
         supabase.from("inventory_locations")
             .select()

@@ -19,6 +19,8 @@ import dagger.hilt.processor.internal.definecomponent.codegen._dagger_hilt_andro
 import dagger.hilt.processor.internal.definecomponent.codegen._dagger_hilt_components_SingletonComponent;
 import hilt_aggregated_deps._com_lfcreative_lfscan_LFScanApp_GeneratedInjector;
 import hilt_aggregated_deps._com_lfcreative_lfscan_MainActivity_GeneratedInjector;
+import hilt_aggregated_deps._com_lfcreative_lfscan_ui_screen_AssetsViewModel_HiltModules_BindsModule;
+import hilt_aggregated_deps._com_lfcreative_lfscan_ui_screen_AssetsViewModel_HiltModules_KeyModule;
 import hilt_aggregated_deps._com_lfcreative_lfscan_ui_screen_ModeSelectViewModel_HiltModules_BindsModule;
 import hilt_aggregated_deps._com_lfcreative_lfscan_ui_screen_ModeSelectViewModel_HiltModules_KeyModule;
 import hilt_aggregated_deps._com_lfcreative_lfscan_ui_screen_PinViewModel_HiltModules_BindsModule;
@@ -67,6 +69,8 @@ import hilt_aggregated_deps._dagger_hilt_android_internal_modules_HiltWrapper_Ac
     aggregatedDeps = {
         _com_lfcreative_lfscan_LFScanApp_GeneratedInjector.class,
         _com_lfcreative_lfscan_MainActivity_GeneratedInjector.class,
+        _com_lfcreative_lfscan_ui_screen_AssetsViewModel_HiltModules_BindsModule.class,
+        _com_lfcreative_lfscan_ui_screen_AssetsViewModel_HiltModules_KeyModule.class,
         _com_lfcreative_lfscan_ui_screen_ModeSelectViewModel_HiltModules_BindsModule.class,
         _com_lfcreative_lfscan_ui_screen_ModeSelectViewModel_HiltModules_KeyModule.class,
         _com_lfcreative_lfscan_ui_screen_PinViewModel_HiltModules_BindsModule.class,

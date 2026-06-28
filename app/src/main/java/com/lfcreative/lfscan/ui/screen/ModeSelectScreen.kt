@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,6 +59,7 @@ private val modes = listOf(
 fun ModeSelectScreen(
     onModeSelected: (String) -> Unit,
     onSignOut: () -> Unit,
+    onViewAssets: () -> Unit,
     viewModel: ModeSelectViewModel = hiltViewModel()
 ) {
     val member by viewModel.currentMember.collectAsState(initial = null)
@@ -72,6 +74,9 @@ fun ModeSelectScreen(
                     )
                 },
                 actions = {
+                    IconButton(onClick = onViewAssets) {
+                        Icon(Icons.Default.Inventory2, contentDescription = "Assets")
+                    }
                     IconButton(onClick = { viewModel.signOut(onSignOut) }) {
                         Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Sign out")
                     }
