@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.lfcreative.lfscan.app-mergeDebugResources-71:/values-uz/values-uz.xml",
+            "outputFile": "com.lfcreative.lfscan.app-mergeDebugResources-72:/values-uz/values-uz.xml",
             "map": [
                 {
                     "source": "/Users/liam/.gradle/caches/8.9/transforms/4a6e2bce25d142154e47422699dabe00/transformed/core-1.15.0/res/values-uz/values-uz.xml",

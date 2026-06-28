@@ -57,7 +57,13 @@ fun CameraPreview(
     // factory (not update) so bindCamera runs once — torch toggles don't restart the camera
     AndroidView(
         factory = { ctx ->
-            val previewView = PreviewView(ctx)
+            val previewView = PreviewView(ctx).apply {
+                // COMPATIBLE forces TextureView instead of SurfaceView.
+                // SurfaceView renders on its own hardware layer and ignores all
+                // Compose clip/draw operations; TextureView is composited normally
+                // and respects clipToBounds() applied at the Compose layer.
+                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            }
             bindCamera(
                 context          = ctx,
                 lifecycleOwner   = lifecycleOwner,
@@ -124,7 +130,7 @@ private fun bindCamera(
 
             // Continuous autofocus centred on the frame, re-triggered every 2 s
             val meteringPoint = previewView.meteringPointFactory.createPoint(0.5f, 0.5f)
-            camera.cameraControl.startFocusingAndMetering(
+            camera.cameraControl.startFocusAndMetering(
                 FocusMeteringAction.Builder(meteringPoint, FocusMeteringAction.FLAG_AF)
                     .setAutoCancelDuration(2, TimeUnit.SECONDS)
                     .build()

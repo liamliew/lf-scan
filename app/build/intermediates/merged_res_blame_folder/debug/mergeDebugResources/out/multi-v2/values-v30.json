@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.lfcreative.lfscan.app-mergeDebugResources-71:/values-v30/values-v30.xml",
+            "outputFile": "com.lfcreative.lfscan.app-mergeDebugResources-72:/values-v30/values-v30.xml",
             "map": [
                 {
                     "source": "/Users/liam/.gradle/caches/8.9/transforms/9c118be2b49cd11bb54776f5c0a5b195/transformed/material3-release/res/values-v30/values-v30.xml",

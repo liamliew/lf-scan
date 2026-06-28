@@ -69,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -96,7 +97,8 @@ fun ScannerScreen(
     scannerType: String,
     viewModel: ScanViewModel,
     onBack: () -> Unit,
-    onCommitSuccess: (Int) -> Unit
+    onCommitSuccess: (Int) -> Unit,
+    onNavigateToAsset: (String) -> Unit
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
@@ -186,6 +188,13 @@ fun ScannerScreen(
         }
     }
 
+    // Inquiry mode: navigate to asset detail on successful scan
+    LaunchedEffect(Unit) {
+        viewModel.navigateToAsset.collect { assetId ->
+            onNavigateToAsset(assetId)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -201,7 +210,7 @@ fun ScannerScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            Surface(shadowElevation = 8.dp) {
+            if (mode != "inquiry") Surface(shadowElevation = 8.dp) {
                 Column {
                     state.commitError?.let { err ->
                         Text(
@@ -265,28 +274,31 @@ fun ScannerScreen(
         ) {
             // ── TOP ZONE (fixed height, never scrolls) ──────────────────────
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(220.dp)
+                modifier = if (mode == "inquiry")
+                    Modifier.fillMaxWidth().weight(1f).clipToBounds()
+                else
+                    Modifier.fillMaxWidth().height(220.dp).clipToBounds()
             ) {
                 when (scannerType) {
                     "camera" -> CameraTopZone(
                         hasCameraPermission = hasCameraPermission,
                         flashColor = flashColor,
-                        onBarcodeDetected = viewModel::processScannedCode
+                        onBarcodeDetected = if (mode == "inquiry") viewModel::processInquiryScan
+                                            else viewModel::processScannedCode
                     )
                     "external", "internal" -> CounterTopZone(
                         count = state.scannedItems.size,
                         flashColor = flashColor,
                         modeAccent = modeAccent,
-                        onCodeReceived = viewModel::processScannedCode
+                        onCodeReceived = if (mode == "inquiry") viewModel::processInquiryScan
+                                         else viewModel::processScannedCode
                     )
                     else -> ManualTopZone(onSubmit = viewModel::processScannedCode)
                 }
             }
 
-            // ── SCANNED ITEMS LIST (scrollable) ─────────────────────────────
-            Box(
+            // ── SCANNED ITEMS LIST (scrollable) — hidden in inquiry mode ────
+            if (mode != "inquiry") Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -507,7 +519,7 @@ private fun ScannedItemCard(item: ScannedItem, onRemove: () -> Unit) {
         "available"    -> Color(0xFF4ade80)
         "checked_out"  -> Color(0xFFf59e0b)
         "lost"         -> Color(0xFFef4444)
-        "under_repair" -> Color(0xFF9ca3af)
+        "repair"       -> Color(0xFF9ca3af)
         else           -> Color(0xFF9ca3af)
     }
     val displayId = item.rawCode.let { if (it.length > 4) it.take(4) + ".." else it }

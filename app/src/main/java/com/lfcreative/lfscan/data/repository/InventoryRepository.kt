@@ -64,4 +64,32 @@ class InventoryRepository @Inject constructor() {
     suspend fun insertEvent(event: InventoryEventInsert) {
         supabase.from("inventory_events").insert(event)
     }
+
+    suspend fun getLocationById(locationId: String): Location? =
+        supabase.from("inventory_locations")
+            .select { filter { eq("id", locationId) } }
+            .decodeSingleOrNull<Location>()
+
+    suspend fun getEventsByAssetId(assetId: String): List<InventoryEvent> =
+        supabase.from("inventory_events")
+            .select {
+                filter { eq("asset_id", assetId) }
+                order("created_at", Order.DESCENDING)
+            }
+            .decodeList<InventoryEvent>()
+
+    suspend fun updateAssetFull(asset: Asset) {
+        supabase.from("inventory_assets")
+            .update({
+                set("name", asset.name)
+                set("type", asset.type)
+                set("size", asset.size)
+                set("cost", asset.cost)
+                set("status", asset.status)
+                set("notes", asset.notes)
+                set("current_location_id", asset.currentLocationId)
+            }) {
+                filter { eq("asset_id", asset.assetId) }
+            }
+    }
 }

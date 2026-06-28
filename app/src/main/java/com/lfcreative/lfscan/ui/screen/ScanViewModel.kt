@@ -62,7 +62,30 @@ class ScanViewModel @Inject constructor(
     private val _snackbarMessage = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val snackbarMessage: SharedFlow<String> = _snackbarMessage.asSharedFlow()
 
+    private val _navigateToAsset = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val navigateToAsset: SharedFlow<String> = _navigateToAsset.asSharedFlow()
+
     val currentMember = sessionDataStore.currentMember
+
+    fun processInquiryScan(code: String) {
+        val trimmed = code.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                val asset = repository.getAssetByCode(trimmed)
+                if (asset != null) {
+                    _state.value = _state.value.copy(flash = ScanFlash.FOUND)
+                    _navigateToAsset.emit(asset.assetId)
+                } else {
+                    _state.value = _state.value.copy(flash = ScanFlash.NOT_FOUND)
+                    _snackbarMessage.emit("Asset not found: $trimmed")
+                }
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(flash = ScanFlash.NOT_FOUND)
+                _snackbarMessage.emit("Asset not found: $trimmed")
+            }
+        }
+    }
 
     fun loadLocations() {
         viewModelScope.launch {
@@ -89,31 +112,31 @@ class ScanViewModel @Inject constructor(
                 val asset = repository.getAssetByCode(trimmed)
                 if (asset != null) {
                     _state.value = _state.value.copy(
-                        scannedItems = _state.value.scannedItems + ScannedItem(
+                        scannedItems = listOf(ScannedItem(
                             asset = asset,
                             isUnknown = false,
                             rawCode = trimmed
-                        ),
+                        )) + _state.value.scannedItems,
                         flash = ScanFlash.FOUND
                     )
                 } else {
                     // Unknown — added to list with red styling
                     _state.value = _state.value.copy(
-                        scannedItems = _state.value.scannedItems + ScannedItem(
+                        scannedItems = listOf(ScannedItem(
                             asset = null,
                             isUnknown = true,
                             rawCode = trimmed
-                        ),
+                        )) + _state.value.scannedItems,
                         flash = ScanFlash.NOT_FOUND
                     )
                 }
             } catch (_: Exception) {
                 _state.value = _state.value.copy(
-                    scannedItems = _state.value.scannedItems + ScannedItem(
+                    scannedItems = listOf(ScannedItem(
                         asset = null,
                         isUnknown = true,
                         rawCode = trimmed
-                    ),
+                    )) + _state.value.scannedItems,
                     flash = ScanFlash.NOT_FOUND
                 )
             }

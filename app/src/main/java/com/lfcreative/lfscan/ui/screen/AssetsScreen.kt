@@ -3,6 +3,7 @@ package com.lfcreative.lfscan.ui.screen
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -67,13 +68,14 @@ private val statusFilters = listOf(
     StatusFilter("Available",    "available"),
     StatusFilter("Checked Out",  "checked_out"),
     StatusFilter("Lost",         "lost"),
-    StatusFilter("Under Repair", "under_repair")
+    StatusFilter("Under Repair", "repair")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssetsScreen(
     onBack: () -> Unit,
+    onNavigateToAsset: (String) -> Unit,
     viewModel: AssetsViewModel = hiltViewModel()
 ) {
     val filteredAssets by viewModel.filteredAssets.collectAsState()
@@ -187,7 +189,10 @@ fun AssetsScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             items(filteredAssets, key = { it.assetId }) { asset ->
-                                AssetCard(asset = asset)
+                                AssetCard(
+                                    asset = asset,
+                                    onClick = { onNavigateToAsset(asset.assetId) }
+                                )
                             }
                         }
                     }
@@ -198,18 +203,20 @@ fun AssetsScreen(
 }
 
 @Composable
-private fun AssetCard(asset: Asset) {
+private fun AssetCard(asset: Asset, onClick: () -> Unit) {
     val leftBarColor = when (asset.status) {
-        "available"    -> Color(0xFF4ade80)
-        "checked_out"  -> Color(0xFFf59e0b)
-        "lost"         -> Color(0xFFef4444)
-        "under_repair" -> Color(0xFF9ca3af)
-        else           -> Color(0xFF9ca3af)
+        "available"   -> Color(0xFF4ade80)
+        "checked_out" -> Color(0xFFf59e0b)
+        "lost"        -> Color(0xFFef4444)
+        "repair"      -> Color(0xFF9ca3af)
+        else          -> Color(0xFF9ca3af)
     }
     val displayId = if (asset.assetId.length > 4) asset.assetId.take(4) + ".." else asset.assetId
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         border = BorderStroke(1.dp, Color(0xFFE5E7EB)),
@@ -249,7 +256,7 @@ private fun AssetCard(asset: Asset) {
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    asset.type,
+                    asset.type.orEmpty(),
                     fontSize = 12.sp,
                     color = Color(0xFF6B7280),
                     maxLines = 1

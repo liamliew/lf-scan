@@ -26,6 +26,10 @@ MERGED from [androidx.navigation:navigation-common-ktx:2.8.5] /Users/liam/.gradl
 MERGED from [androidx.navigation:navigation-runtime-ktx:2.8.5] /Users/liam/.gradle/caches/8.9/transforms/097456a485a71ab65b9c41d39c96885f/transformed/navigation-runtime-ktx-2.8.5/AndroidManifest.xml:2:1-7:12
 MERGED from [androidx.navigation:navigation-compose:2.8.5] /Users/liam/.gradle/caches/8.9/transforms/1cca8a3f7f9d4d29a8b0e4498d1fbff7/transformed/navigation-compose-2.8.5/AndroidManifest.xml:2:1-7:12
 MERGED from [com.google.dagger:hilt-android:2.52] /Users/liam/.gradle/caches/8.9/transforms/7289e0ee927df29ff8158b5f51ce5521/transformed/hilt-android-2.52/AndroidManifest.xml:16:1-19:12
+MERGED from [io.coil-kt:coil-compose:2.7.0] /Users/liam/.gradle/caches/8.9/transforms/8f2a7611346a26106f2959e9e0579d50/transformed/coil-compose-2.7.0/AndroidManifest.xml:2:1-7:12
+MERGED from [io.coil-kt:coil-compose-base:2.7.0] /Users/liam/.gradle/caches/8.9/transforms/67cc57a39ca86c6cfaf71775bca55517/transformed/coil-compose-base-2.7.0/AndroidManifest.xml:2:1-7:12
+MERGED from [io.coil-kt:coil:2.7.0] /Users/liam/.gradle/caches/8.9/transforms/bb5d74a8c560712fa966738adfa458a0/transformed/coil-2.7.0/AndroidManifest.xml:2:1-7:12
+MERGED from [io.coil-kt:coil-base:2.7.0] /Users/liam/.gradle/caches/8.9/transforms/70daa8ab3750f766c1b884f924c5ed3c/transformed/coil-base-2.7.0/AndroidManifest.xml:2:1-7:12
 MERGED from [androidx.appcompat:appcompat-resources:1.6.1] /Users/liam/.gradle/caches/8.9/transforms/1fc98e175b55348dda972556859c4f23/transformed/appcompat-resources-1.6.1/AndroidManifest.xml:17:1-22:12
 MERGED from [androidx.appcompat:appcompat:1.6.1] /Users/liam/.gradle/caches/8.9/transforms/b92e1a638b2a38752a2a00252fd72fa5/transformed/appcompat-1.6.1/AndroidManifest.xml:17:1-22:12
 MERGED from [androidx.fragment:fragment:1.5.1] /Users/liam/.gradle/caches/8.9/transforms/c43d4d3b4b7278601ff1bdb8835251d2/transformed/fragment-1.5.1/AndroidManifest.xml:17:1-24:12
@@ -67,6 +71,7 @@ MERGED from [androidx.lifecycle:lifecycle-livedata:2.8.7] /Users/liam/.gradle/ca
 MERGED from [androidx.lifecycle:lifecycle-runtime-compose-android:2.8.7] /Users/liam/.gradle/caches/8.9/transforms/7600b08e353d7f203db831d8eb5e15fa/transformed/lifecycle-runtime-compose-release/AndroidManifest.xml:2:1-7:12
 MERGED from [androidx.lifecycle:lifecycle-runtime-ktx-android:2.8.7] /Users/liam/.gradle/caches/8.9/transforms/1565e5b9bd2d3956e4290b85ae30822b/transformed/lifecycle-runtime-ktx-release/AndroidManifest.xml:2:1-7:12
 MERGED from [androidx.lifecycle:lifecycle-viewmodel-compose-android:2.8.7] /Users/liam/.gradle/caches/8.9/transforms/a44d18a1c5968c9259e1a4acbcdbe8ca/transformed/lifecycle-viewmodel-compose-release/AndroidManifest.xml:2:1-7:12
+MERGED from [com.google.accompanist:accompanist-drawablepainter:0.32.0] /Users/liam/.gradle/caches/8.9/transforms/c82e96208a510a27a8d46053e33ce0da/transformed/accompanist-drawablepainter-0.32.0/AndroidManifest.xml:17:1-23:12
 MERGED from [androidx.compose.material:material-icons-extended-android:1.7.6] /Users/liam/.gradle/caches/8.9/transforms/a6b7b004c4910325dcd4ed0b634920b3/transformed/material-icons-extended-release/AndroidManifest.xml:2:1-7:12
 MERGED from [androidx.compose.material:material-icons-core-android:1.7.6] /Users/liam/.gradle/caches/8.9/transforms/58eb189f014bb42e7e094f2166c81185/transformed/material-icons-core-release/AndroidManifest.xml:2:1-7:12
 MERGED from [androidx.compose.ui:ui-android:1.7.6] /Users/liam/.gradle/caches/8.9/transforms/00232c3ef9c84ccc94c1d9ef28fe2c75/transformed/ui-release/AndroidManifest.xml:2:1-7:12
@@ -93,7 +98,6 @@ MERGED from [com.russhwolf:multiplatform-settings-no-arg-android-debug:1.2.0] /U
 MERGED from [androidx.startup:startup-runtime:1.2.0] /Users/liam/.gradle/caches/8.9/transforms/3c8befd52ddb8b5adeeefdaabdc5b615/transformed/startup-runtime-1.2.0/AndroidManifest.xml:17:1-31:12
 MERGED from [androidx.tracing:tracing:1.2.0] /Users/liam/.gradle/caches/8.9/transforms/15fd011f313558081de969e01180bfc4/transformed/tracing-1.2.0/AndroidManifest.xml:17:1-22:12
 MERGED from [androidx.tracing:tracing-ktx:1.2.0] /Users/liam/.gradle/caches/8.9/transforms/6336be1d6609c300240275458eb6df9e/transformed/tracing-ktx-1.2.0/AndroidManifest.xml:17:1-22:12
-MERGED from [androidx.exifinterface:exifinterface:1.3.2] /Users/liam/.gradle/caches/8.9/transforms/c047925ee3245e7ba930f5e74fcfb3fb/transformed/exifinterface-1.3.2/AndroidManifest.xml:17:1-24:12
 MERGED from [androidx.interpolator:interpolator:1.0.0] /Users/liam/.gradle/caches/8.9/transforms/d059ed8376f5d01afd853090962b3296/transformed/interpolator-1.0.0/AndroidManifest.xml:17:1-22:12
 MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.1] /Users/liam/.gradle/caches/8.9/transforms/b63a615c9d47f3bc2cbc67db359b0b64/transformed/versionedparcelable-1.1.1/AndroidManifest.xml:17:1-27:12
 MERGED from [com.google.android.datatransport:transport-backend-cct:2.3.3] /Users/liam/.gradle/caches/8.9/transforms/0c1b5b5cf0eb5c5f7a9f2c03b09c5c78/transformed/transport-backend-cct-2.3.3/AndroidManifest.xml:15:1-38:12
@@ -103,6 +107,7 @@ MERGED from [com.google.firebase:firebase-components:16.1.0] /Users/liam/.gradle
 MERGED from [com.google.firebase:firebase-encoders-json:17.1.0] /Users/liam/.gradle/caches/8.9/transforms/fcd7edd351fb3933d449a90c220401bc/transformed/firebase-encoders-json-17.1.0/AndroidManifest.xml:15:1-23:12
 MERGED from [androidx.arch.core:core-runtime:2.2.0] /Users/liam/.gradle/caches/8.9/transforms/a51a013db8df0944cb34ea8d07870827/transformed/core-runtime-2.2.0/AndroidManifest.xml:17:1-22:12
 MERGED from [androidx.cursoradapter:cursoradapter:1.0.0] /Users/liam/.gradle/caches/8.9/transforms/f6e54b9011cf80e534a0f2a52e5cd894/transformed/cursoradapter-1.0.0/AndroidManifest.xml:17:1-22:12
+MERGED from [androidx.exifinterface:exifinterface:1.3.7] /Users/liam/.gradle/caches/8.9/transforms/6917dd2a3713cfb9d4f16920df941db6/transformed/exifinterface-1.3.7/AndroidManifest.xml:17:1-24:12
 MERGED from [com.soywiz.korlibs.krypto:krypto-android:4.0.10] /Users/liam/.gradle/caches/8.9/transforms/4f20737d5267d11a69d25c749b26e818/transformed/krypto-debug/AndroidManifest.xml:2:1-9:12
 MERGED from [com.russhwolf:multiplatform-settings-android-debug:1.2.0] /Users/liam/.gradle/caches/8.9/transforms/0cbc6a351b726c254dbab507ece33c8e/transformed/multiplatform-settings-debug/AndroidManifest.xml:2:1-7:12
 MERGED from [co.touchlab:kermit-android-debug:2.0.4] /Users/liam/.gradle/caches/8.9/transforms/9d24aca761ed882d1bf715ab8fc00797/transformed/kermit-debug/AndroidManifest.xml:2:1-7:12
@@ -274,6 +279,14 @@ MERGED from [androidx.navigation:navigation-compose:2.8.5] /Users/liam/.gradle/c
 MERGED from [androidx.navigation:navigation-compose:2.8.5] /Users/liam/.gradle/caches/8.9/transforms/1cca8a3f7f9d4d29a8b0e4498d1fbff7/transformed/navigation-compose-2.8.5/AndroidManifest.xml:5:5-44
 MERGED from [com.google.dagger:hilt-android:2.52] /Users/liam/.gradle/caches/8.9/transforms/7289e0ee927df29ff8158b5f51ce5521/transformed/hilt-android-2.52/AndroidManifest.xml:18:3-42
 MERGED from [com.google.dagger:hilt-android:2.52] /Users/liam/.gradle/caches/8.9/transforms/7289e0ee927df29ff8158b5f51ce5521/transformed/hilt-android-2.52/AndroidManifest.xml:18:3-42
+MERGED from [io.coil-kt:coil-compose:2.7.0] /Users/liam/.gradle/caches/8.9/transforms/8f2a7611346a26106f2959e9e0579d50/transformed/coil-compose-2.7.0/AndroidManifest.xml:5:5-44
+MERGED from [io.coil-kt:coil-compose:2.7.0] /Users/liam/.gradle/caches/8.9/transforms/8f2a7611346a26106f2959e9e0579d50/transformed/coil-compose-2.7.0/AndroidManifest.xml:5:5-44
+MERGED from [io.coil-kt:coil-compose-base:2.7.0] /Users/liam/.gradle/caches/8.9/transforms/67cc57a39ca86c6cfaf71775bca55517/transformed/coil-compose-base-2.7.0/AndroidManifest.xml:5:5-44
+MERGED from [io.coil-kt:coil-compose-base:2.7.0] /Users/liam/.gradle/caches/8.9/transforms/67cc57a39ca86c6cfaf71775bca55517/transformed/coil-compose-base-2.7.0/AndroidManifest.xml:5:5-44
+MERGED from [io.coil-kt:coil:2.7.0] /Users/liam/.gradle/caches/8.9/transforms/bb5d74a8c560712fa966738adfa458a0/transformed/coil-2.7.0/AndroidManifest.xml:5:5-44
+MERGED from [io.coil-kt:coil:2.7.0] /Users/liam/.gradle/caches/8.9/transforms/bb5d74a8c560712fa966738adfa458a0/transformed/coil-2.7.0/AndroidManifest.xml:5:5-44
+MERGED from [io.coil-kt:coil-base:2.7.0] /Users/liam/.gradle/caches/8.9/transforms/70daa8ab3750f766c1b884f924c5ed3c/transformed/coil-base-2.7.0/AndroidManifest.xml:5:5-44
+MERGED from [io.coil-kt:coil-base:2.7.0] /Users/liam/.gradle/caches/8.9/transforms/70daa8ab3750f766c1b884f924c5ed3c/transformed/coil-base-2.7.0/AndroidManifest.xml:5:5-44
 MERGED from [androidx.appcompat:appcompat-resources:1.6.1] /Users/liam/.gradle/caches/8.9/transforms/1fc98e175b55348dda972556859c4f23/transformed/appcompat-resources-1.6.1/AndroidManifest.xml:20:5-44
 MERGED from [androidx.appcompat:appcompat-resources:1.6.1] /Users/liam/.gradle/caches/8.9/transforms/1fc98e175b55348dda972556859c4f23/transformed/appcompat-resources-1.6.1/AndroidManifest.xml:20:5-44
 MERGED from [androidx.appcompat:appcompat:1.6.1] /Users/liam/.gradle/caches/8.9/transforms/b92e1a638b2a38752a2a00252fd72fa5/transformed/appcompat-1.6.1/AndroidManifest.xml:20:5-44
@@ -356,6 +369,8 @@ MERGED from [androidx.lifecycle:lifecycle-runtime-ktx-android:2.8.7] /Users/liam
 MERGED from [androidx.lifecycle:lifecycle-runtime-ktx-android:2.8.7] /Users/liam/.gradle/caches/8.9/transforms/1565e5b9bd2d3956e4290b85ae30822b/transformed/lifecycle-runtime-ktx-release/AndroidManifest.xml:5:5-44
 MERGED from [androidx.lifecycle:lifecycle-viewmodel-compose-android:2.8.7] /Users/liam/.gradle/caches/8.9/transforms/a44d18a1c5968c9259e1a4acbcdbe8ca/transformed/lifecycle-viewmodel-compose-release/AndroidManifest.xml:5:5-44
 MERGED from [androidx.lifecycle:lifecycle-viewmodel-compose-android:2.8.7] /Users/liam/.gradle/caches/8.9/transforms/a44d18a1c5968c9259e1a4acbcdbe8ca/transformed/lifecycle-viewmodel-compose-release/AndroidManifest.xml:5:5-44
+MERGED from [com.google.accompanist:accompanist-drawablepainter:0.32.0] /Users/liam/.gradle/caches/8.9/transforms/c82e96208a510a27a8d46053e33ce0da/transformed/accompanist-drawablepainter-0.32.0/AndroidManifest.xml:21:5-44
+MERGED from [com.google.accompanist:accompanist-drawablepainter:0.32.0] /Users/liam/.gradle/caches/8.9/transforms/c82e96208a510a27a8d46053e33ce0da/transformed/accompanist-drawablepainter-0.32.0/AndroidManifest.xml:21:5-44
 MERGED from [androidx.compose.material:material-icons-extended-android:1.7.6] /Users/liam/.gradle/caches/8.9/transforms/a6b7b004c4910325dcd4ed0b634920b3/transformed/material-icons-extended-release/AndroidManifest.xml:5:5-44
 MERGED from [androidx.compose.material:material-icons-extended-android:1.7.6] /Users/liam/.gradle/caches/8.9/transforms/a6b7b004c4910325dcd4ed0b634920b3/transformed/material-icons-extended-release/AndroidManifest.xml:5:5-44
 MERGED from [androidx.compose.material:material-icons-core-android:1.7.6] /Users/liam/.gradle/caches/8.9/transforms/58eb189f014bb42e7e094f2166c81185/transformed/material-icons-core-release/AndroidManifest.xml:5:5-44
@@ -408,8 +423,6 @@ MERGED from [androidx.tracing:tracing:1.2.0] /Users/liam/.gradle/caches/8.9/tran
 MERGED from [androidx.tracing:tracing:1.2.0] /Users/liam/.gradle/caches/8.9/transforms/15fd011f313558081de969e01180bfc4/transformed/tracing-1.2.0/AndroidManifest.xml:20:5-44
 MERGED from [androidx.tracing:tracing-ktx:1.2.0] /Users/liam/.gradle/caches/8.9/transforms/6336be1d6609c300240275458eb6df9e/transformed/tracing-ktx-1.2.0/AndroidManifest.xml:20:5-44
 MERGED from [androidx.tracing:tracing-ktx:1.2.0] /Users/liam/.gradle/caches/8.9/transforms/6336be1d6609c300240275458eb6df9e/transformed/tracing-ktx-1.2.0/AndroidManifest.xml:20:5-44
-MERGED from [androidx.exifinterface:exifinterface:1.3.2] /Users/liam/.gradle/caches/8.9/transforms/c047925ee3245e7ba930f5e74fcfb3fb/transformed/exifinterface-1.3.2/AndroidManifest.xml:20:5-22:41
-MERGED from [androidx.exifinterface:exifinterface:1.3.2] /Users/liam/.gradle/caches/8.9/transforms/c047925ee3245e7ba930f5e74fcfb3fb/transformed/exifinterface-1.3.2/AndroidManifest.xml:20:5-22:41
 MERGED from [androidx.interpolator:interpolator:1.0.0] /Users/liam/.gradle/caches/8.9/transforms/d059ed8376f5d01afd853090962b3296/transformed/interpolator-1.0.0/AndroidManifest.xml:20:5-44
 MERGED from [androidx.interpolator:interpolator:1.0.0] /Users/liam/.gradle/caches/8.9/transforms/d059ed8376f5d01afd853090962b3296/transformed/interpolator-1.0.0/AndroidManifest.xml:20:5-44
 MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.1] /Users/liam/.gradle/caches/8.9/transforms/b63a615c9d47f3bc2cbc67db359b0b64/transformed/versionedparcelable-1.1.1/AndroidManifest.xml:20:5-22:41
@@ -428,6 +441,8 @@ MERGED from [androidx.arch.core:core-runtime:2.2.0] /Users/liam/.gradle/caches/8
 MERGED from [androidx.arch.core:core-runtime:2.2.0] /Users/liam/.gradle/caches/8.9/transforms/a51a013db8df0944cb34ea8d07870827/transformed/core-runtime-2.2.0/AndroidManifest.xml:20:5-44
 MERGED from [androidx.cursoradapter:cursoradapter:1.0.0] /Users/liam/.gradle/caches/8.9/transforms/f6e54b9011cf80e534a0f2a52e5cd894/transformed/cursoradapter-1.0.0/AndroidManifest.xml:20:5-44
 MERGED from [androidx.cursoradapter:cursoradapter:1.0.0] /Users/liam/.gradle/caches/8.9/transforms/f6e54b9011cf80e534a0f2a52e5cd894/transformed/cursoradapter-1.0.0/AndroidManifest.xml:20:5-44
+MERGED from [androidx.exifinterface:exifinterface:1.3.7] /Users/liam/.gradle/caches/8.9/transforms/6917dd2a3713cfb9d4f16920df941db6/transformed/exifinterface-1.3.7/AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.exifinterface:exifinterface:1.3.7] /Users/liam/.gradle/caches/8.9/transforms/6917dd2a3713cfb9d4f16920df941db6/transformed/exifinterface-1.3.7/AndroidManifest.xml:20:5-22:41
 MERGED from [com.soywiz.korlibs.krypto:krypto-android:4.0.10] /Users/liam/.gradle/caches/8.9/transforms/4f20737d5267d11a69d25c749b26e818/transformed/krypto-debug/AndroidManifest.xml:5:5-7:41
 MERGED from [com.soywiz.korlibs.krypto:krypto-android:4.0.10] /Users/liam/.gradle/caches/8.9/transforms/4f20737d5267d11a69d25c749b26e818/transformed/krypto-debug/AndroidManifest.xml:5:5-7:41
 MERGED from [com.russhwolf:multiplatform-settings-android-debug:1.2.0] /Users/liam/.gradle/caches/8.9/transforms/0cbc6a351b726c254dbab507ece33c8e/transformed/multiplatform-settings-debug/AndroidManifest.xml:5:5-44

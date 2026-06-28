@@ -9,8 +9,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.lfcreative.lfscan.ui.screen.AssetDetailScreen
 import com.lfcreative.lfscan.ui.screen.AssetsScreen
-import com.lfcreative.lfscan.ui.screen.AssetsViewModel
 import com.lfcreative.lfscan.ui.screen.CommitResultScreen
 import com.lfcreative.lfscan.ui.screen.ModeSelectScreen
 import com.lfcreative.lfscan.ui.screen.PinScreen
@@ -35,6 +35,9 @@ sealed class Screen(val route: String) {
     }
     object CommitResult : Screen("commit_result/{mode}/{count}") {
         fun createRoute(mode: String, count: Int) = "commit_result/$mode/$count"
+    }
+    object AssetDetail : Screen("asset/{assetId}") {
+        fun createRoute(assetId: String) = "asset/$assetId"
     }
 }
 
@@ -71,10 +74,11 @@ fun LFScanNavGraph() {
         }
 
         composable(Screen.Assets.route) {
-            val viewModel: AssetsViewModel = hiltViewModel()
             AssetsScreen(
                 onBack = { navController.popBackStack() },
-                viewModel = viewModel
+                onNavigateToAsset = { assetId ->
+                    navController.navigate(Screen.AssetDetail.createRoute(assetId))
+                }
             )
         }
 
@@ -120,6 +124,9 @@ fun LFScanNavGraph() {
                         navController.navigate(Screen.CommitResult.createRoute(mode, count)) {
                             popUpTo(Screen.Scanner.createRoute(mode, scannerType)) { inclusive = false }
                         }
+                    },
+                    onNavigateToAsset = { assetId ->
+                        navController.navigate(Screen.AssetDetail.createRoute(assetId))
                     }
                 )
             }
@@ -146,6 +153,13 @@ fun LFScanNavGraph() {
                     }
                 )
             }
+        }
+
+        composable(
+            route = Screen.AssetDetail.route,
+            arguments = listOf(navArgument("assetId") { type = NavType.StringType })
+        ) {
+            AssetDetailScreen(onBack = { navController.popBackStack() })
         }
     }
 }
