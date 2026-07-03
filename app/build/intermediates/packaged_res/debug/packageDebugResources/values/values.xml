@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">LF Scan</string>
-    <style name="Theme.LFScan" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">@android:color/white</item>
-        <item name="android:windowBackground">@android:color/white</item>
-    </style>
-</resources>
