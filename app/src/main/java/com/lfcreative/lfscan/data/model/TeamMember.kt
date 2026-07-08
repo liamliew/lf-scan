@@ -9,5 +9,7 @@ data class TeamMember(
     val name: String,
     val pin: String,
     val role: String,
-    @SerialName("clerk_user_id") val clerkUserId: String? = null
+    @SerialName("clerk_user_id") val clerkUserId: String? = null,
+    // NULL means no password set — Step 2 of login is skipped for this member (backwards compat).
+    val password: String? = null
 )

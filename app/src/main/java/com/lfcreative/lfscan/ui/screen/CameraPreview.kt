@@ -28,68 +28,9 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-
-// ── Torch Manager ─────────────────────────────────────────────────────────────
-
-class TorchManager(val camera: Camera) {
-    @Volatile private var strobeJob: Job? = null
-    private val isStrobing = AtomicBoolean(false)
-    private val isFlashing = AtomicBoolean(false)
-
-    fun startDetectingStrobe(scope: CoroutineScope) {
-        if (isFlashing.get()) return
-        if (!isStrobing.compareAndSet(false, true)) return
-        strobeJob = scope.launch(Dispatchers.IO) {
-            while (isActive) {
-                camera.cameraControl.enableTorch(true)
-                delay(30)
-                camera.cameraControl.enableTorch(false)
-                delay(70)
-            }
-        }
-    }
-
-    fun stopStrobe() {
-        if (!isStrobing.compareAndSet(true, false)) return
-        strobeJob?.cancel()
-        strobeJob = null
-        camera.cameraControl.enableTorch(false)
-    }
-
-    fun flashGoodScan(scope: CoroutineScope) {
-        stopStrobe()
-        isFlashing.set(true)
-        scope.launch(Dispatchers.IO) {
-            camera.cameraControl.enableTorch(true)
-            delay(80)
-            camera.cameraControl.enableTorch(false)
-            isFlashing.set(false)
-        }
-    }
-
-    fun flashUnknownScan(scope: CoroutineScope) {
-        stopStrobe()
-        isFlashing.set(true)
-        scope.launch(Dispatchers.IO) {
-            repeat(2) { i ->
-                camera.cameraControl.enableTorch(true)
-                delay(60)
-                camera.cameraControl.enableTorch(false)
-                if (i < 1) delay(60)
-            }
-            isFlashing.set(false)
-        }
-    }
-}
 
 // ── Camera Preview Composable ─────────────────────────────────────────────────
 

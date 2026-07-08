@@ -19,11 +19,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,9 +52,14 @@ private val scannerTypes = listOf(
 fun ScannerTypeSelectScreen(
     mode: String,
     onBack: () -> Unit,
-    onScannerTypeSelected: (String) -> Unit
+    onScannerTypeSelected: (String) -> Unit,
+    viewModel: ScanViewModel? = null
 ) {
     val modeAccent = modeColor(mode)
+
+    LaunchedEffect(mode) {
+        viewModel?.setModeAndScannerType(mode, null)
+    }
 
     Scaffold(
         topBar = {
@@ -106,7 +113,7 @@ fun ScannerTypeSelectScreen(
                     }
                 }
                 if (index < scannerTypes.lastIndex) {
-                    HorizontalDivider(color = Color(0xFFE5E7EB))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
         }

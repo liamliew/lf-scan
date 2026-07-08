@@ -22,7 +22,8 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:windowSoftInputMode="adjustResize"
+            android:windowSoftInputMode="stateAlwaysHidden|adjustResize"
+            android:lockTaskMode="if_whitelisted"
             android:theme="@style/Theme.LFScan">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

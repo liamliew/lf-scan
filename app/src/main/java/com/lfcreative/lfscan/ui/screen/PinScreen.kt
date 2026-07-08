@@ -7,47 +7,68 @@ import android.content.Intent
 import android.nfc.NfcAdapter
 import android.os.Build
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -60,10 +81,25 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.utf16CodePoint
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -73,6 +109,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.lfcreative.lfscan.MainActivity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -91,12 +128,19 @@ fun PinScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     val uiState by viewModel.uiState.collectAsState()
-    var pin by remember { mutableStateOf("") }
+    // Step 1 = ID entry, Step 2 = password entry (skipped entirely if the member has no password)
+    var step by remember { mutableStateOf(1) }
+    var id by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var memberName by remember { mutableStateOf("") }
     var showError by remember { mutableStateOf(false) }
-    var showBarcodeScanner by remember { mutableStateOf(false) }
+    var errorText by remember { mutableStateOf("") }
+    var showScanTypeChooser by remember { mutableStateOf(false) }
+    // Which barcode input method is active: null (none), "camera", or "scanner" (hardware wedge)
+    var loginScanMode by remember { mutableStateOf<String?>(null) }
     var showNfcDialog by remember { mutableStateOf(false) }
-    // Tracks which auth method was last used so failure handling can differ
-    var authMethod by remember { mutableStateOf("pin") }
+    // Tracks which auth method was last used so failure handling can differ (Step 1 only)
+    var authMethod by remember { mutableStateOf("id") }
     val shakeOffset = remember { Animatable(0f) }
 
     // PendingIntent delivered back to this activity when an NFC tag is scanned
@@ -160,9 +204,9 @@ fun PinScreen(
             if (!isNfcAction) return@Consumer
 
             val text = nfcManager.readNdefText(intent)
-            if (text != null && text.isNotBlank()) {
+            if (!text.isNullOrBlank()) {
                 authMethod = "nfc"
-                viewModel.confirmPin(text.trim())
+                viewModel.submitId(text.trim())
             } else {
                 scope.launch {
                     vibrationManager.unknownScan()
@@ -175,24 +219,51 @@ fun PinScreen(
         onDispose { activity.removeOnNewIntentListener(listener) }
     }
 
+    // ── DataWedge intent scanning — additional input method alongside the camera
+    // scanner above. Registers with MainActivity while this screen is visible. The same
+    // physical trigger feeds Step 1's ID field or Step 2's password field depending on
+    // whichever step is currently showing, since only one handler can be registered at a time.
+    val currentStep = rememberUpdatedState(step)
+    DisposableEffect(Unit) {
+        MainActivity.isPinScreenActive = true
+        MainActivity.onPinBarcodeScanned = { scannedValue ->
+            if (currentStep.value == 1) {
+                authMethod = "barcode"
+                viewModel.submitId(scannedValue)
+            } else {
+                viewModel.setPasswordFromScan(scannedValue)
+            }
+        }
+        onDispose {
+            MainActivity.isPinScreenActive = false
+            MainActivity.onPinBarcodeScanned = null
+        }
+    }
+
     // ── Auth result handling ───────────────────────────────────────────────
     LaunchedEffect(uiState) {
-        when (uiState) {
+        when (val state = uiState) {
+            is PinUiState.AwaitingPassword -> {
+                memberName = state.member.name
+                step = 2
+            }
             is PinUiState.Success -> {
-                if (authMethod != "pin") {
+                if (authMethod != "id") {
                     vibrationManager.goodScan()
                     SoundManager.playGoodScan()
                 }
+                (activity as? MainActivity)?.resetInactivityTimer()
                 onSuccess()
             }
-            is PinUiState.InvalidPin -> {
-                if (authMethod == "pin") {
+            is PinUiState.InvalidId -> {
+                if (authMethod == "id") {
                     repeat(4) {
                         shakeOffset.animateTo(14f, animationSpec = tween(50))
                         shakeOffset.animateTo(-14f, animationSpec = tween(50))
                     }
                     shakeOffset.animateTo(0f, animationSpec = tween(50))
-                    pin = ""
+                    id = ""
+                    errorText = "ID not found"
                     showError = true
                     delay(2000)
                     showError = false
@@ -202,25 +273,41 @@ fun PinScreen(
                     SoundManager.playUnknownScan()
                     snackbarHostState.showSnackbar("Invalid credentials")
                 }
-                authMethod = "pin"
+                authMethod = "id"
+                viewModel.resetState()
+            }
+            is PinUiState.InvalidPassword -> {
+                repeat(4) {
+                    shakeOffset.animateTo(14f, animationSpec = tween(50))
+                    shakeOffset.animateTo(-14f, animationSpec = tween(50))
+                }
+                shakeOffset.animateTo(0f, animationSpec = tween(50))
+                password = ""
+                errorText = "Incorrect password"
+                showError = true
+                delay(2000)
+                showError = false
                 viewModel.resetState()
             }
             is PinUiState.Error -> {
-                val msg = (uiState as PinUiState.Error).message
-                if (authMethod == "pin") {
+                val msg = state.message
+                if (step == 1 && authMethod != "id") {
+                    vibrationManager.unknownScan()
+                    SoundManager.playUnknownScan()
+                    snackbarHostState.showSnackbar(msg)
+                } else {
                     repeat(4) {
                         shakeOffset.animateTo(14f, animationSpec = tween(50))
                         shakeOffset.animateTo(-14f, animationSpec = tween(50))
                     }
                     shakeOffset.animateTo(0f, animationSpec = tween(50))
-                    pin = ""
+                    if (step == 1) id = "" else password = ""
+                    errorText = msg
                     showError = true
                     delay(2000)
                     showError = false
-                } else {
-                    snackbarHostState.showSnackbar(msg)
                 }
-                authMethod = "pin"
+                authMethod = "id"
                 viewModel.resetState()
             }
             else -> {}
@@ -229,15 +316,25 @@ fun PinScreen(
 
     // ── Content ────────────────────────────────────────────────────────────
     Box(modifier = Modifier.fillMaxSize()) {
-        if (showBarcodeScanner) {
-            LoginBarcodeScanner(
-                onCancel = { showBarcodeScanner = false },
-                onCodeDetected = { code ->
-                    showBarcodeScanner = false
-                    authMethod = "barcode"
-                    viewModel.confirmPin(code)
-                }
-            )
+        if (loginScanMode != null) {
+            when (loginScanMode) {
+                "camera" -> LoginBarcodeScanner(
+                    onCancel = { loginScanMode = null },
+                    onCodeDetected = { code ->
+                        loginScanMode = null
+                        authMethod = "barcode"
+                        viewModel.submitId(code)
+                    }
+                )
+                "scanner" -> LoginHardwareScanner(
+                    onCancel = { loginScanMode = null },
+                    onCodeDetected = { code ->
+                        loginScanMode = null
+                        authMethod = "barcode"
+                        viewModel.submitId(code)
+                    }
+                )
+            }
         } else {
             Scaffold(
                 snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -246,121 +343,75 @@ fun PinScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding)
-                        .background(Color.White),
+                        .background(MaterialTheme.colorScheme.background),
                     contentAlignment = Alignment.Center
                 ) {
                     if (uiState is PinUiState.Loading) {
                         CircularProgressIndicator()
                     } else {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(32.dp),
-                            modifier = Modifier.padding(24.dp)
-                        ) {
-                            Text("LF Scan", fontSize = 28.sp, fontWeight = FontWeight.Bold)
-
-                            // 4-cell PIN display
-                            Row(
-                                modifier = Modifier.offset {
-                                    IntOffset(shakeOffset.value.roundToInt(), 0)
-                                },
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                repeat(4) { index ->
-                                    Box(
-                                        modifier = Modifier
-                                            .size(52.dp)
-                                            .border(
-                                                width = 2.dp,
-                                                color = when {
-                                                    showError -> Color(0xFFEF4444)
-                                                    index < pin.length -> Color(0xFF374151)
-                                                    else -> Color(0xFFD1D5DB)
-                                                },
-                                                shape = RoundedCornerShape(10.dp)
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (index < pin.length) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(14.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(0xFF111827))
-                                            )
+                        AnimatedContent(
+                            targetState = step,
+                            transitionSpec = {
+                                (slideInVertically(animationSpec = tween(200)) { height -> height / 3 } +
+                                    fadeIn(animationSpec = tween(200))) togetherWith
+                                    (slideOutVertically(animationSpec = tween(200)) { height -> -height / 3 } +
+                                        fadeOut(animationSpec = tween(200)))
+                            },
+                            label = "pinStep"
+                        ) { targetStep ->
+                            if (targetStep == 1) {
+                                IdStepContent(
+                                    id = id,
+                                    showError = showError,
+                                    errorText = errorText,
+                                    shakeOffset = shakeOffset,
+                                    onDigit = { digit -> if (id.length < 4) id += digit },
+                                    onBackspace = { if (id.isNotEmpty()) id = id.dropLast(1) },
+                                    onConfirm = {
+                                        if (id.length == 4) {
+                                            authMethod = "id"
+                                            viewModel.submitId(id)
+                                        }
+                                    },
+                                    onScanBarcode = { showScanTypeChooser = true },
+                                    nfcSupported = nfcManager.isNfcSupported,
+                                    onScanNfc = {
+                                        if (!nfcManager.isNfcEnabled) {
+                                            scope.launch {
+                                                val result = snackbarHostState.showSnackbar(
+                                                    message = "Please enable NFC in settings",
+                                                    actionLabel = "Open Settings"
+                                                )
+                                                if (result == SnackbarResult.ActionPerformed) {
+                                                    activity.startActivity(
+                                                        Intent(Settings.ACTION_NFC_SETTINGS)
+                                                    )
+                                                }
+                                            }
+                                        } else {
+                                            showNfcDialog = true
                                         }
                                     }
-                                }
-                            }
-
-                            if (showError) {
-                                Text(
-                                    text = if (uiState is PinUiState.Error)
-                                        (uiState as PinUiState.Error).message
-                                    else "Invalid PIN",
-                                    color = Color(0xFFEF4444),
-                                    fontSize = 14.sp
                                 )
                             } else {
-                                Spacer(Modifier.height(20.dp))
-                            }
-
-                            PinNumpad(
-                                onDigit = { digit -> if (pin.length < 4) pin += digit },
-                                onBackspace = { if (pin.isNotEmpty()) pin = pin.dropLast(1) },
-                                onConfirm = {
-                                    if (pin.length == 4) {
-                                        authMethod = "pin"
-                                        viewModel.confirmPin(pin)
+                                PasswordStepContent(
+                                    memberName = memberName,
+                                    password = password,
+                                    showError = showError,
+                                    errorText = errorText,
+                                    shakeOffset = shakeOffset,
+                                    onDigit = { digit -> password += digit },
+                                    onBackspace = { if (password.isNotEmpty()) password = password.dropLast(1) },
+                                    onConfirm = {
+                                        if (password.isNotEmpty()) viewModel.submitPassword(password)
+                                    },
+                                    onBack = {
+                                        step = 1
+                                        password = ""
+                                        showError = false
+                                        viewModel.backToIdStep()
                                     }
-                                }
-                            )
-
-                            // ── Alternative auth buttons ───────────────
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                OutlinedButton(
-                                    onClick = { showBarcodeScanner = true },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(
-                                        Icons.Default.QrCodeScanner,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Scan Barcode")
-                                }
-
-                                if (nfcManager.isNfcSupported) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            if (!nfcManager.isNfcEnabled) {
-                                                scope.launch {
-                                                    val result = snackbarHostState.showSnackbar(
-                                                        message = "Please enable NFC in settings",
-                                                        actionLabel = "Open Settings"
-                                                    )
-                                                    if (result == SnackbarResult.ActionPerformed) {
-                                                        activity.startActivity(
-                                                            Intent(Settings.ACTION_NFC_SETTINGS)
-                                                        )
-                                                    }
-                                                }
-                                            } else {
-                                                showNfcDialog = true
-                                            }
-                                        },
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Nfc,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("Scan NFC")
-                                    }
-                                }
+                                )
                             }
                         }
                     }
@@ -370,12 +421,179 @@ fun PinScreen(
             if (showNfcDialog) {
                 NfcScanDialog(onDismiss = { showNfcDialog = false })
             }
+
+            if (showScanTypeChooser) {
+                ScanTypeChooserDialog(
+                    onDismiss = { showScanTypeChooser = false },
+                    onCameraSelected = {
+                        showScanTypeChooser = false
+                        loginScanMode = "camera"
+                    },
+                    onScannerSelected = {
+                        showScanTypeChooser = false
+                        loginScanMode = "scanner"
+                    }
+                )
+            }
         }
+    }
+}
+
+// ── Step 1: ID entry ───────────────────────────────────────────────────────────
+
+@Composable
+private fun IdStepContent(
+    id: String,
+    showError: Boolean,
+    errorText: String,
+    shakeOffset: Animatable<Float, AnimationVector1D>,
+    onDigit: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onConfirm: () -> Unit,
+    onScanBarcode: () -> Unit,
+    nfcSupported: Boolean,
+    onScanNfc: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(32.dp),
+        modifier = Modifier.padding(24.dp)
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("LF Scan", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text("Enter your ID", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        // 4-cell ID display
+        Row(
+            modifier = Modifier.offset {
+                IntOffset(shakeOffset.value.roundToInt(), 0)
+            },
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            repeat(4) { index ->
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .border(
+                            width = 2.dp,
+                            color = when {
+                                showError -> Color(0xFFEF4444)
+                                index < id.length -> MaterialTheme.colorScheme.onSurface
+                                else -> MaterialTheme.colorScheme.outline
+                            },
+                            shape = RoundedCornerShape(10.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (index < id.length) {
+                        Box(
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onSurface)
+                        )
+                    }
+                }
+            }
+        }
+
+        if (showError) {
+            Text(errorText, color = Color(0xFFEF4444), fontSize = 14.sp)
+        } else {
+            Spacer(Modifier.height(20.dp))
+        }
+
+        PinNumpad(onDigit = onDigit, onBackspace = onBackspace, onConfirm = onConfirm)
+
+        // ── Alternative auth buttons ───────────────
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(
+                onClick = onScanBarcode,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    Icons.Default.QrCodeScanner,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("Scan Barcode")
+            }
+
+            if (nfcSupported) {
+                OutlinedButton(
+                    onClick = onScanNfc,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        Icons.Default.Nfc,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("Scan NFC")
+                }
+            }
+        }
+    }
+}
+
+// ── Step 2: password entry ─────────────────────────────────────────────────────
+
+@Composable
+private fun PasswordStepContent(
+    memberName: String,
+    password: String,
+    showError: Boolean,
+    errorText: String,
+    shakeOffset: Animatable<Float, AnimationVector1D>,
+    onDigit: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onConfirm: () -> Unit,
+    onBack: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+        modifier = Modifier.padding(24.dp)
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Welcome, $memberName", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text("Enter your password", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        OutlinedTextField(
+            value = password,
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            isError = showError,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .offset { IntOffset(shakeOffset.value.roundToInt(), 0) }
+        )
+
+        if (showError) {
+            Text(errorText, color = Color(0xFFEF4444), fontSize = 14.sp)
+        } else {
+            Spacer(Modifier.height(20.dp))
+        }
+
+        PinNumpad(onDigit = onDigit, onBackspace = onBackspace, onConfirm = onConfirm)
+
+        TextButton(onClick = onBack) { Text("← Back") }
     }
 }
 
 // ── Login barcode scanner ─────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LoginBarcodeScanner(
     onCancel: () -> Unit,
@@ -392,31 +610,190 @@ private fun LoginBarcodeScanner(
         permLauncher.launch(Manifest.permission.CAMERA)
     }
 
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text("Scan to Sign In", color = Color.White, fontWeight = FontWeight.SemiBold)
+                },
+                navigationIcon = {
+                    IconButton(onClick = onCancel) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.White
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black),
+                windowInsets = WindowInsets.statusBars
+            )
+        },
+        containerColor = Color.Black
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(Color.Black)
+        ) {
+            if (hasCameraPermission) {
+                CameraPreview(
+                    modifier = Modifier.fillMaxSize(),
+                    onBarcodeDetected = { code -> onCodeDetectedState.value(code) }
+                )
+                // Scanning reticle
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .size(240.dp, 140.dp)
+                            .border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                    )
+                }
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Camera permission required", color = Color.White)
+                }
+            }
+        }
+    }
+}
+
+// ── Scan type chooser ──────────────────────────────────────────────────────────
+
+@Composable
+private fun ScanTypeChooserDialog(
+    onDismiss: () -> Unit,
+    onCameraSelected: () -> Unit,
+    onScannerSelected: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Scan Barcode", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column {
+                ScanTypeOption(
+                    icon = Icons.Default.CameraAlt,
+                    label = "Camera",
+                    onClick = onCameraSelected
+                )
+                ScanTypeOption(
+                    icon = Icons.Default.QrCodeScanner,
+                    label = "Scanner",
+                    onClick = onScannerSelected
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun ScanTypeOption(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+        Text(label, fontSize = 16.sp)
+    }
+}
+
+// ── Login hardware scanner (external/internal wedge scanner) ──────────────────
+
+@Composable
+private fun LoginHardwareScanner(
+    onCancel: () -> Unit,
+    onCodeDetected: (String) -> Unit
+) {
+    val activity = LocalContext.current as? Activity
+    val focusRequester = remember { FocusRequester() }
+    val interactionSource = remember { MutableInteractionSource() }
+    var inputBuffer by remember { mutableStateOf("") }
+    var isFocused by remember { mutableStateOf(false) }
+    val onCodeDetectedState = rememberUpdatedState(onCodeDetected)
+
+    // Suppress the soft keyboard while capturing raw hardware-scanner key events
+    DisposableEffect(Unit) {
+        val previousMode = activity?.window?.attributes?.softInputMode
+        activity?.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+        onDispose {
+            activity?.window?.setSoftInputMode(
+                previousMode ?: WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED
+            )
+        }
+    }
+
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    LaunchedEffect(isFocused) { if (!isFocused) focusRequester.requestFocus() }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        if (hasCameraPermission) {
-            CameraPreview(
-                modifier = Modifier.fillMaxSize(),
-                onBarcodeDetected = { code -> onCodeDetectedState.value(code) }
+        Column(
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                Icons.Default.QrCodeScanner,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurface
             )
-            // Scanning reticle
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Box(
-                    modifier = Modifier
-                        .size(240.dp, 140.dp)
-                        .border(2.dp, Color.White, RoundedCornerShape(8.dp))
-                )
-            }
-        } else {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Camera permission required", color = Color.White)
-            }
+            Text("Ready to scan", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+            Text(
+                "Scan a barcode with your scanner",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center
+            )
         }
 
-        // Cancel — top left
+        // Invisible focusable target that captures hardware scanner input via raw key events.
+        // Unlike a text field, a plain focusable never triggers the IME.
+        Box(
+            modifier = Modifier
+                .size(1.dp)
+                .alpha(0f)
+                .focusRequester(focusRequester)
+                .onFocusChanged { state -> isFocused = state.isFocused }
+                .focusable(interactionSource = interactionSource)
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                        }
+                    }
+                }
+                .onKeyEvent { keyEvent ->
+                    if (keyEvent.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    when (keyEvent.key) {
+                        Key.Enter, Key.NumPadEnter -> {
+                            val code = inputBuffer.trim()
+                            if (code.isNotEmpty()) onCodeDetectedState.value(code)
+                            inputBuffer = ""
+                        }
+                        else -> {
+                            val codePoint = keyEvent.utf16CodePoint
+                            if (codePoint > 0) {
+                                inputBuffer += String(Character.toChars(codePoint))
+                            }
+                        }
+                    }
+                    true
+                }
+        )
+
         IconButton(
             onClick = onCancel,
             modifier = Modifier
@@ -426,7 +803,7 @@ private fun LoginBarcodeScanner(
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Cancel",
-                tint = Color.White
+                tint = MaterialTheme.colorScheme.onSurface
             )
         }
     }
@@ -443,7 +820,7 @@ private fun NfcScanDialog(onDismiss: () -> Unit) {
                 Icons.Default.Nfc,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
-                tint = Color(0xFF374151)
+                tint = MaterialTheme.colorScheme.onSurface
             )
         },
         title = {
@@ -453,7 +830,7 @@ private fun NfcScanDialog(onDismiss: () -> Unit) {
             Text(
                 "Hold your card or tag to the back of your phone",
                 textAlign = TextAlign.Center,
-                color = Color(0xFF6B7280),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 14.sp
             )
         },
@@ -467,7 +844,7 @@ private fun NfcScanDialog(onDismiss: () -> Unit) {
 // ── Numpad ────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun PinNumpad(
+internal fun PinNumpad(
     onDigit: (String) -> Unit,
     onBackspace: () -> Unit,
     onConfirm: () -> Unit

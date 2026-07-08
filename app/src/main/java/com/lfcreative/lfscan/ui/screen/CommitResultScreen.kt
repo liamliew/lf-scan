@@ -10,11 +10,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -68,13 +72,15 @@ fun CommitResultScreen(
         "check_in"   -> "Checked In"
         "update"     -> "Updated"
         "mark_lost"  -> "Marked Lost"
+        "rent_out"   -> "Rented Out"
         else         -> "Looked Up"
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -106,7 +112,7 @@ fun CommitResultScreen(
         Text(
             "$count item${if (count != 1) "s" else ""} processed",
             fontSize = 15.sp,
-            color = Color(0xFF6B7280)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(Modifier.height(32.dp))
@@ -125,7 +131,7 @@ fun CommitResultScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        item.asset?.name ?: item.rawCode,
+                        item.container?.container?.name ?: item.asset?.name ?: item.rawCode,
                         fontWeight = FontWeight.Medium,
                         fontSize = 14.sp,
                         modifier = Modifier.weight(1f),
@@ -138,7 +144,7 @@ fun CommitResultScreen(
                         fontWeight = FontWeight.Medium
                     )
                 }
-                HorizontalDivider(color = Color(0xFFF3F4F6))
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
             }
 
             // ── Skipped (unknown) items ──────────────────────────────────────
@@ -148,7 +154,7 @@ fun CommitResultScreen(
                         "Skipped (not found)",
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
-                        color = Color(0xFF6B7280),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 20.dp, bottom = 6.dp)
                     )
                 }
@@ -174,7 +180,7 @@ fun CommitResultScreen(
                             fontWeight = FontWeight.Medium
                         )
                     }
-                    HorizontalDivider(color = Color(0xFFF3F4F6))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                 }
             }
         }

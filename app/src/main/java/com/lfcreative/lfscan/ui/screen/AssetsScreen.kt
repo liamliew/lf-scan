@@ -25,19 +25,23 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -67,6 +71,7 @@ private val statusFilters = listOf(
     StatusFilter("All",          null),
     StatusFilter("Available",    "available"),
     StatusFilter("Checked Out",  "checked_out"),
+    StatusFilter("Rented",       "rented"),
     StatusFilter("Lost",         "lost"),
     StatusFilter("Under Repair", "repair")
 )
@@ -76,6 +81,7 @@ private val statusFilters = listOf(
 fun AssetsScreen(
     onBack: () -> Unit,
     onNavigateToAsset: (String) -> Unit,
+    onNavigateToCreateAsset: () -> Unit,
     viewModel: AssetsViewModel = hiltViewModel()
 ) {
     val filteredAssets by viewModel.filteredAssets.collectAsState()
@@ -108,11 +114,21 @@ fun AssetsScreen(
                             Icon(Icons.Default.Close, contentDescription = "Close search")
                         }
                     } else {
+                        TextButton(onClick = onNavigateToCreateAsset) {
+                            Text("+ New Asset")
+                        }
                         IconButton(onClick = { searchExpanded = true }) {
                             Icon(Icons.Default.Search, contentDescription = "Search")
                         }
                     }
                 }
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = onNavigateToCreateAsset,
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("New Asset") }
             )
         }
     ) { padding ->
@@ -179,7 +195,7 @@ fun AssetsScreen(
                     }
                     filteredAssets.isEmpty() -> {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No assets found", color = Color(0xFF9CA3AF), fontSize = 14.sp)
+                            Text("No assets found", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                         }
                     }
                     else -> {
@@ -203,10 +219,11 @@ fun AssetsScreen(
 }
 
 @Composable
-private fun AssetCard(asset: Asset, onClick: () -> Unit) {
+internal fun AssetCard(asset: Asset, onClick: () -> Unit) {
     val leftBarColor = when (asset.status) {
         "available"   -> Color(0xFF4ade80)
         "checked_out" -> Color(0xFFf59e0b)
+        "rented"      -> if (isRentalOverdue(asset.rentalDueDate)) Color(0xFFef4444) else Color(0xFFa855f7)
         "lost"        -> Color(0xFFef4444)
         "repair"      -> Color(0xFF9ca3af)
         else          -> Color(0xFF9ca3af)
@@ -218,8 +235,8 @@ private fun AssetCard(asset: Asset, onClick: () -> Unit) {
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Color(0xFFE5E7EB)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Row(
@@ -258,9 +275,20 @@ private fun AssetCard(asset: Asset, onClick: () -> Unit) {
                 Text(
                     asset.type.orEmpty(),
                     fontSize = 12.sp,
-                    color = Color(0xFF6B7280),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
+                if (asset.status == "rented") {
+                    val overdue = isRentalOverdue(asset.rentalDueDate)
+                    Text(
+                        "Rented to ${asset.currentUserName ?: "?"} · Due ${formatRentalDueDate(asset.rentalDueDate)}" +
+                            if (overdue) " (Overdue)" else "",
+                        fontSize = 11.sp,
+                        color = if (overdue) Color(0xFFef4444) else Color(0xFFa855f7),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }

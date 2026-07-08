@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lfcreative.lfscan.data.model.Asset
+import com.lfcreative.lfscan.data.model.Container
 import com.lfcreative.lfscan.data.model.InventoryEvent
 import com.lfcreative.lfscan.data.model.InventoryEventInsert
 import com.lfcreative.lfscan.data.model.Location
@@ -34,6 +35,7 @@ class AssetDetailViewModel @Inject constructor(
     private val _asset = MutableStateFlow<Asset?>(null)
     private val _location = MutableStateFlow<Location?>(null)
     private val _locations = MutableStateFlow<List<Location>>(emptyList())
+    private val _container = MutableStateFlow<Container?>(null)
     private val _events = MutableStateFlow<List<InventoryEvent>>(emptyList())
     private val _locationMap = MutableStateFlow<Map<String, String>>(emptyMap())
     private val _isLoading = MutableStateFlow(false)
@@ -45,6 +47,7 @@ class AssetDetailViewModel @Inject constructor(
     val asset: StateFlow<Asset?> = _asset.asStateFlow()
     val location: StateFlow<Location?> = _location.asStateFlow()
     val locations: StateFlow<List<Location>> = _locations.asStateFlow()
+    val container: StateFlow<Container?> = _container.asStateFlow()
     val events: StateFlow<List<InventoryEvent>> = _events.asStateFlow()
     val locationMap: StateFlow<Map<String, String>> = _locationMap.asStateFlow()
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -75,6 +78,8 @@ class AssetDetailViewModel @Inject constructor(
                     _location.value = null
                 }
 
+                _container.value = asset?.containerId?.let { repository.getContainerById(it)?.container }
+
                 _events.value = repository.getEventsByAssetId(assetId)
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to load asset"
@@ -90,6 +95,25 @@ class AssetDetailViewModel @Inject constructor(
 
     fun cancelEdit() {
         _isEditing.value = false
+    }
+
+    fun removeFromContainer(performedBy: TeamMember) {
+        val currentAsset = _asset.value ?: return
+        val containerId = currentAsset.containerId ?: return
+        viewModelScope.launch {
+            try {
+                repository.removeAssetFromContainer(
+                    assetId = currentAsset.assetId,
+                    containerId = containerId,
+                    performedBy = performedBy,
+                    forced = true
+                )
+                load()
+                _snackbarMessage.emit("Removed from container")
+            } catch (e: Exception) {
+                _snackbarMessage.emit(e.message ?: "Failed to remove from container")
+            }
+        }
     }
 
     fun saveAsset(updated: Asset, performedBy: TeamMember) {

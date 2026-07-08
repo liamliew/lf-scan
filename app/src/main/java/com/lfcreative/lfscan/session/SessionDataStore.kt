@@ -22,9 +22,21 @@ class SessionDataStore @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val teamMemberKey = stringPreferencesKey("team_member")
+    private val scanModeKey = stringPreferencesKey("last_scan_mode")
+    private val themeModeKey = stringPreferencesKey("theme_mode")
 
     val currentMember: Flow<TeamMember?> = context.dataStore.data.map { prefs ->
         prefs[teamMemberKey]?.let { Json.decodeFromString<TeamMember>(it) }
+    }
+
+    val scanMode: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[scanModeKey] ?: "2D"
+    }
+
+    // "system" | "light" | "dark" — device-wide, not tied to any employee, so it applies
+    // immediately (including on the PIN screen) rather than only after a settings row loads.
+    val themeMode: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[themeModeKey] ?: "system"
     }
 
     suspend fun saveSession(member: TeamMember) {
@@ -36,6 +48,18 @@ class SessionDataStore @Inject constructor(
     suspend fun clearSession() {
         context.dataStore.edit { prefs ->
             prefs.remove(teamMemberKey)
+        }
+    }
+
+    suspend fun saveScanMode(mode: String) {
+        context.dataStore.edit { prefs ->
+            prefs[scanModeKey] = mode
+        }
+    }
+
+    suspend fun saveThemeMode(mode: String) {
+        context.dataStore.edit { prefs ->
+            prefs[themeModeKey] = mode
         }
     }
 }

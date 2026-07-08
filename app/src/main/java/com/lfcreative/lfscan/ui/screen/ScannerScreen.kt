@@ -7,46 +7,65 @@ import android.location.LocationManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -58,30 +77,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lfcreative.lfscan.data.model.Location
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.lfcreative.lfscan.MainActivity
+import com.lfcreative.lfscan.data.model.Asset
+import com.lfcreative.lfscan.ui.theme.Amber
 import com.lfcreative.lfscan.ui.theme.Blue
 import com.lfcreative.lfscan.ui.theme.Green
 import com.lfcreative.lfscan.ui.theme.Grey
@@ -89,6 +106,9 @@ import com.lfcreative.lfscan.ui.theme.Purple
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,22 +118,94 @@ fun ScannerScreen(
     viewModel: ScanViewModel,
     onBack: () -> Unit,
     onCommitSuccess: (Int) -> Unit,
-    onNavigateToAsset: (String) -> Unit
+    onNavigateToAsset: (String) -> Unit,
+    locationId: String? = null,
+    settingsViewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
     val currentMember by viewModel.currentMember.collectAsState(initial = null)
+    val pendingContainerConfirmation by viewModel.pendingContainerConfirmation.collectAsState()
 
     var hasCameraPermission by remember { mutableStateOf(false) }
     var hasFineLocation by remember { mutableStateOf(false) }
+    var gpsError by remember { mutableStateOf(false) }
     var flashColor by remember { mutableStateOf<Color?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     val modeAccent = modeColor(mode)
 
     var userTorchEnabled by remember { mutableStateOf(false) }
-    var torchManager by remember { mutableStateOf<TorchManager?>(null) }
     val vibrationManager = remember { VibrationManager(context) }
+    val dataWedgeManager = remember { DataWedgeManager(context) }
+
+    // DataWedge status bar state (INTERNAL scanner mode only)
+    val scannerStatus by MainActivity.scannerStatus.collectAsState()
+    val lastScannedData by MainActivity.lastScannedData.collectAsState()
+    val scanMode by viewModel.scanMode.collectAsState()
+
+    // ── Internal-scanner-only settings: illumination + soft scan trigger ───────
+    var illuminationDefaultSetting by remember { mutableStateOf("on") }
+    var illuminationEnabled by remember { mutableStateOf(true) }
+    var scanTriggerMode by remember { mutableStateOf("hold") }
+    var isScanActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentMember, scannerType) {
+        val employeeId = currentMember?.id ?: return@LaunchedEffect
+        if (scannerType != "internal") return@LaunchedEffect
+
+        illuminationDefaultSetting = settingsViewModel.getSetting(employeeId, "illumination_default", "on")
+        illuminationEnabled = when (illuminationDefaultSetting) {
+            "off" -> false
+            "last_choice" -> settingsViewModel.getSetting(employeeId, "illumination_last", "true").toBoolean()
+            else -> true
+        }
+        dataWedgeManager.enableIllumination(illuminationEnabled)
+
+        scanTriggerMode = settingsViewModel.getSetting(employeeId, "scan_trigger_mode", "hold")
+    }
+
+    // Internal (TC15) scanner input arrives via a DataWedge Intent broadcast received by
+    // MainActivity's scanReceiver (configured in MainActivity.configureDataWedge) — not via
+    // key events. Wire the callback in while this screen has a hardware-scanner top zone
+    // showing so MainActivity knows where to deliver decoded barcodes. This also registers for
+    // SCANNER_STATUS notifications and pre-warms the internal scanner (IDLE -> WAITING) on
+    // mount, so it's ready before the user touches the trigger.
+    //
+    // Navigating back from here returns to LocationScanScreen (Check In's location picker),
+    // which re-mounts and re-claims these same MainActivity globals via cross-fade — same as
+    // the forward hand-off from LocationScanScreen into this screen. So teardown here (stopping
+    // the beam, resetting decoders, suspending the scanner, clearing the globals) must also be
+    // gated on still owning the handler, or it would clobber LocationScanScreen's fresh
+    // registration and leave its trigger looking "enabled" but dead.
+    //
+    // NOTE: External Bluetooth scanners that emulate keyboard (HID) input are NOT currently
+    // supported. That path previously relied on MainActivity.onKeyDown, which was removed in
+    // favor of DataWedge Intent Output. Supporting HID scanners again would require
+    // reintroducing onKeyDown or a hidden-TextField key-capture approach alongside this one.
+    val onHardwareScan = if (mode == "inquiry") viewModel::processInquiryScan else viewModel::processScannedCode
+    DisposableEffect(scannerType, onHardwareScan) {
+        if (scannerType == "internal") {
+            dataWedgeManager.registerForScannerStatus()
+            dataWedgeManager.resumeScanner()
+        }
+        if (scannerType == "external" || scannerType == "internal") {
+            MainActivity.onBarcodeScanned = onHardwareScan
+            MainActivity.isScannerScreenActive = true
+        }
+        onDispose {
+            if (MainActivity.onBarcodeScanned === onHardwareScan) {
+                if (scannerType == "internal") {
+                    dataWedgeManager.stopScan()
+                    dataWedgeManager.resetScanMode()
+                    dataWedgeManager.suspendScanner()
+                    dataWedgeManager.unregisterForScannerStatus()
+                }
+                MainActivity.isScannerScreenActive = false
+                MainActivity.onBarcodeScanned = null
+            }
+        }
+    }
 
     // Permissions
     val cameraPermLauncher = rememberLauncherForActivityResult(
@@ -122,12 +214,20 @@ fun ScannerScreen(
 
     val locationPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> hasFineLocation = granted }
+    ) { granted ->
+        hasFineLocation = granted
+        if (!granted) gpsError = true
+    }
 
     LaunchedEffect(Unit) {
+        viewModel.setModeAndScannerType(mode, scannerType)
+        if (mode == "check_in" && locationId != null) viewModel.setLocation(locationId)
         if (scannerType == "camera") cameraPermLauncher.launch(Manifest.permission.CAMERA)
-        if (mode == "check_in") viewModel.loadLocations()
         if (mode == "update") locationPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        if (scannerType == "internal") {
+            val savedMode = viewModel.loadSavedScanMode()
+            dataWedgeManager.setScanMode(savedMode)
+        }
     }
 
     // GPS tracking for update mode
@@ -139,30 +239,35 @@ fun ScannerScreen(
                 viewModel.updateGps(loc.latitude, loc.longitude)
             }
             try {
-                if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                val gpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                val networkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                gpsError = !gpsEnabled && !networkEnabled
+                if (gpsEnabled) {
                     locationManager.requestLocationUpdates(
                         LocationManager.GPS_PROVIDER, 5_000L, 5f, listener
                     )
                 }
-                if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                if (networkEnabled) {
                     locationManager.requestLocationUpdates(
                         LocationManager.NETWORK_PROVIDER, 5_000L, 5f, listener
                     )
                 }
-            } catch (_: SecurityException) {}
+            } catch (_: SecurityException) {
+                gpsError = true
+            }
             onDispose { locationManager.removeUpdates(listener) }
         } else {
+            if (mode == "update" && !hasFineLocation) gpsError = true
             onDispose {}
         }
     }
 
-    // Flash effect + audio + vibration + torch feedback (all in parallel)
+    // Flash effect + audio + vibration feedback (all in parallel)
     LaunchedEffect(state.flash) {
         when (state.flash) {
             ScanFlash.FOUND -> {
                 launch(Dispatchers.Default) { vibrationManager.goodScan() }
                 launch(Dispatchers.Default) { SoundManager.playGoodScan() }
-                if (!userTorchEnabled) torchManager?.flashGoodScan(this)
                 flashColor = Color(0x9900C853)
                 delay(400)
                 flashColor = null
@@ -171,7 +276,6 @@ fun ScannerScreen(
             ScanFlash.NOT_FOUND -> {
                 launch(Dispatchers.Default) { vibrationManager.unknownScan() }
                 launch(Dispatchers.Default) { SoundManager.playUnknownScan() }
-                if (!userTorchEnabled) torchManager?.flashUnknownScan(this)
                 flashColor = Color(0x99FF1744)
                 delay(400)
                 flashColor = null
@@ -213,12 +317,42 @@ fun ScannerScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    if (scannerType == "internal") {
+                        ScanModeButton(
+                            currentMode = scanMode,
+                            onModeSelected = { newMode ->
+                                viewModel.setScanMode(newMode, context)
+                            }
+                        )
+                        IconButton(onClick = {
+                            val newState = !illuminationEnabled
+                            illuminationEnabled = newState
+                            dataWedgeManager.enableIllumination(newState)
+                            if (illuminationDefaultSetting == "last_choice") {
+                                currentMember?.let { member ->
+                                    settingsViewModel.updateSetting(
+                                        member.id, "illumination_last", newState.toString()
+                                    )
+                                }
+                            }
+                        }) {
+                            Icon(
+                                if (illuminationEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                                contentDescription = if (illuminationEnabled) "Turn illumination off" else "Turn illumination on"
+                            )
+                        }
+                    }
                 }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            if (mode != "inquiry") Surface(shadowElevation = 8.dp) {
+            if (mode != "inquiry") Surface(
+                shadowElevation = 8.dp,
+                modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
+            ) {
                 Column {
                     state.commitError?.let { err ->
                         Text(
@@ -229,19 +363,19 @@ fun ScannerScreen(
                         )
                     }
 
-                    // Location picker — check_in
-                    if (mode == "check_in") {
-                        LocationPicker(
-                            locations = state.locations,
-                            selectedId = state.locationId,
-                            onSelect = viewModel::setLocation,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    // Compact status bar — check_in, check_out, update, rent_out
+                    if (mode == "check_in" || mode == "check_out" || mode == "update" || mode == "rent_out") {
+                        ScannerStatusBar(
+                            mode = mode,
+                            scannerType = scannerType,
+                            gpsLat = state.gpsLat,
+                            gpsError = gpsError,
+                            validCount = state.scannedItems.count { !it.isUnknown },
+                            invalidCount = state.scannedItems.count { it.isUnknown },
+                            scannerStatus = scannerStatus,
+                            scanMode = scanMode,
+                            lastScannedData = lastScannedData
                         )
-                    }
-
-                    // GPS status row — update
-                    if (mode == "update") {
-                        GpsStatusRow(state)
                     }
 
                     Button(
@@ -294,15 +428,17 @@ fun ScannerScreen(
                         torchEnabled = userTorchEnabled,
                         onTorchToggle = { userTorchEnabled = !userTorchEnabled },
                         onBarcodeDetected = if (mode == "inquiry") viewModel::processInquiryScan
-                                            else viewModel::processScannedCode,
-                        onTorchManagerReady = { torchManager = it }
+                                            else viewModel::processScannedCode
                     )
                     "external", "internal" -> CounterTopZone(
                         count = state.scannedItems.size,
                         flashColor = flashColor,
                         modeAccent = modeAccent,
-                        onCodeReceived = if (mode == "inquiry") viewModel::processInquiryScan
-                                         else viewModel::processScannedCode
+                        scannerType = scannerType,
+                        scanTriggerMode = scanTriggerMode,
+                        isScanActive = isScanActive,
+                        onScanActiveChange = { isScanActive = it },
+                        dataWedgeManager = dataWedgeManager
                     )
                     else -> ManualTopZone(onSubmit = viewModel::processScannedCode)
                 }
@@ -323,23 +459,74 @@ fun ScannerScreen(
                         )
                     }
                 } else {
+                    val listState = rememberLazyListState()
+                    val itemCount by remember { derivedStateOf { state.scannedItems.size } }
+                    LaunchedEffect(itemCount) {
+                        if (itemCount > 0) listState.animateScrollToItem(0)
+                    }
+
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            horizontal = 12.dp, vertical = 8.dp
+                            start = 12.dp,
+                            end = 12.dp,
+                            top = 8.dp,
+                            bottom = WindowInsets.navigationBars.asPaddingValues()
+                                .calculateBottomPadding() + 80.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        items(state.scannedItems, key = { it.rawCode }) { item ->
+                        itemsIndexed(state.scannedItems, key = { _, item -> item.rawCode }) { index, item ->
+                            val supportsExpansion = (mode == "check_out" || mode == "update" || mode == "rent_out") && item.container != null
                             ScannedItemCard(
                                 item = item,
-                                onRemove = { viewModel.removeItem(item.rawCode) }
+                                isNewest = index == 0,
+                                onRemove = { viewModel.removeItem(item.rawCode) },
+                                isExpanded = supportsExpansion && item.rawCode == state.expandedContainerRawCode,
+                                onToggleExpand = if (supportsExpansion) {
+                                    { viewModel.toggleContainerExpanded(item.rawCode) }
+                                } else null,
+                                onRemovePendingAsset = { assetId ->
+                                    viewModel.removePendingAssetFromContainer(item.rawCode, assetId)
+                                }
                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    pendingContainerConfirmation?.let {
+        AlertDialog(
+            onDismissRequest = {
+                viewModel.cancelAddContainer()
+            },
+            title = { Text("Multiple Containers") },
+            text = {
+                Text(
+                    "You've already scanned a container in this session. " +
+                        "Scanning multiple containers is unusual. Add this container anyway?"
+                )
+            },
+            confirmButton = {
+                Button(onClick = { viewModel.confirmAddContainer() }) {
+                    Text("Add Anyway")
+                }
+            },
+            dismissButton = {
+                Button(
+                    onClick = { viewModel.cancelAddContainer() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -351,34 +538,13 @@ private fun CameraTopZone(
     flashColor: Color?,
     torchEnabled: Boolean,
     onTorchToggle: () -> Unit,
-    onBarcodeDetected: (String) -> Unit,
-    onTorchManagerReady: (TorchManager) -> Unit
+    onBarcodeDetected: (String) -> Unit
 ) {
-    val localTorchManager = remember { mutableStateOf<TorchManager?>(null) }
-    val scope = rememberCoroutineScope()
-
-    // Stop strobe when user manually enables the torch so it doesn't conflict
-    LaunchedEffect(torchEnabled) {
-        if (torchEnabled) localTorchManager.value?.stopStrobe()
-    }
-
     if (hasCameraPermission) {
         CameraPreview(
             modifier = Modifier.fillMaxSize(),
             torchEnabled = torchEnabled,
-            onBarcodeDetected = onBarcodeDetected,
-            onDetecting = { detecting ->
-                if (detecting && !torchEnabled) {
-                    localTorchManager.value?.startDetectingStrobe(scope)
-                } else {
-                    localTorchManager.value?.stopStrobe()
-                }
-            },
-            onCameraReady = { camera ->
-                val manager = TorchManager(camera)
-                localTorchManager.value = manager
-                onTorchManagerReady(manager)
-            }
+            onBarcodeDetected = onBarcodeDetected
         )
         // Reticle overlay
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -388,7 +554,7 @@ private fun CameraTopZone(
                     .border(2.dp, Color.White, RoundedCornerShape(8.dp))
             )
         }
-        // Torch toggle — top-right corner of the preview
+        // Manual torch toggle — top-right corner of the preview, inside preview bounds
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -398,14 +564,16 @@ private fun CameraTopZone(
             IconButton(
                 onClick = onTorchToggle,
                 modifier = Modifier
-                    .size(40.dp)
-                    .background(Color(0x66000000), CircleShape)
+                    .background(
+                        color = Color.Black.copy(alpha = 0.4f),
+                        shape = CircleShape
+                    )
+                    .padding(8.dp)
             ) {
                 Icon(
-                    imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                    imageVector = if (torchEnabled) Icons.Default.FlashOff else Icons.Default.FlashOn,
                     contentDescription = if (torchEnabled) "Turn torch off" else "Turn torch on",
-                    tint = if (torchEnabled) Color(0xFFFFCA28) else Color.White,
-                    modifier = Modifier.size(20.dp)
+                    tint = Color.White
                 )
             }
         }
@@ -429,29 +597,69 @@ private fun CameraTopZone(
 }
 
 @Composable
-private fun CounterTopZone(
+internal fun CounterTopZone(
     count: Int,
     flashColor: Color?,
     modeAccent: Color,
-    onCodeReceived: (String) -> Unit
+    scannerType: String,
+    scanTriggerMode: String,
+    isScanActive: Boolean,
+    onScanActiveChange: (Boolean) -> Unit,
+    dataWedgeManager: DataWedgeManager
 ) {
-    val focusRequester = remember { FocusRequester() }
-    val keyboardController = LocalSoftwareKeyboardController.current
-    var inputBuffer by remember { mutableStateOf("") }
-
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-        keyboardController?.hide()
-    }
+    // Hardware-scanner input is captured at the Activity level via a DataWedge Intent
+    // broadcast (see MainActivity), not here. On "internal" the circle doubles as the
+    // soft scan trigger; on "external" it stays a passive count display.
+    val isTrigger = scannerType == "internal"
+    val borderAlpha by animateFloatAsState(
+        targetValue = if (isTrigger && isScanActive) 1f else 0.55f,
+        label = "scanTriggerBorderAlpha"
+    )
 
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        // Circle with count
+        // Circle with count — the scan trigger button when scannerType == "internal"
         Box(
             modifier = Modifier
                 .size(180.dp)
                 .clip(CircleShape)
-                .border(4.dp, modeAccent, CircleShape)
-                .background(Color.White),
+                .border(4.dp, modeAccent.copy(alpha = borderAlpha), CircleShape)
+                .background(MaterialTheme.colorScheme.surface)
+                .then(
+                    if (isTrigger) {
+                        Modifier.pointerInput(scanTriggerMode) {
+                            if (scanTriggerMode == "toggle") {
+                                detectTapGestures(onTap = {
+                                    if (isScanActive) {
+                                        dataWedgeManager.stopScan()
+                                        onScanActiveChange(false)
+                                    } else {
+                                        dataWedgeManager.startScan()
+                                        onScanActiveChange(true)
+                                    }
+                                })
+                            } else {
+                                detectTapGestures(onPress = {
+                                    // Scanner may still be waking up (IDLE) right after screen
+                                    // open; a START_SCANNING sent before it reaches WAITING is
+                                    // silently dropped. Poll briefly, but never block the user.
+                                    val startTime = System.currentTimeMillis()
+                                    while (MainActivity.scannerStatus.value != "WAITING" &&
+                                        System.currentTimeMillis() - startTime < 300L
+                                    ) {
+                                        delay(10L)
+                                    }
+                                    dataWedgeManager.startScan()
+                                    onScanActiveChange(true)
+                                    tryAwaitRelease()
+                                    dataWedgeManager.stopScan()
+                                    onScanActiveChange(false)
+                                })
+                            }
+                        }
+                    } else {
+                        Modifier
+                    }
+                ),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -459,9 +667,19 @@ private fun CounterTopZone(
                     count.toString(),
                     fontSize = 52.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF111827)
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                Text("scanned", fontSize = 13.sp, color = Color(0xFF9CA3AF))
+                if (isTrigger) {
+                    Text(
+                        "SCAN",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        color = modeAccent
+                    )
+                } else {
+                    Text("scanned", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             flashColor?.let { color ->
                 Box(
@@ -472,30 +690,6 @@ private fun CounterTopZone(
             }
         }
     }
-
-    // Hidden text field captures hardware scanner input
-    BasicTextField(
-        value = inputBuffer,
-        onValueChange = { newVal ->
-            val newlineIdx = newVal.indexOfFirst { it == '\n' || it == '\r' }
-            if (newlineIdx >= 0) {
-                val code = newVal.substring(0, newlineIdx).trim()
-                if (code.isNotEmpty()) onCodeReceived(code)
-                inputBuffer = ""
-            } else {
-                inputBuffer = newVal
-            }
-        },
-        modifier = Modifier
-            .size(1.dp)
-            .alpha(0f)
-            .focusRequester(focusRequester),
-        textStyle = TextStyle.Default,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Text,
-            imeAction = ImeAction.None
-        )
-    )
 }
 
 @Composable
@@ -545,154 +739,510 @@ private fun ManualTopZone(onSubmit: (String) -> Unit) {
 // ── Scanned item card ───────────────────────────────────────────────────────
 
 @Composable
-private fun ScannedItemCard(item: ScannedItem, onRemove: () -> Unit) {
+private fun ScannedItemCard(
+    item: ScannedItem,
+    isNewest: Boolean,
+    onRemove: () -> Unit,
+    isExpanded: Boolean = false,
+    onToggleExpand: (() -> Unit)? = null,
+    onRemovePendingAsset: (String) -> Unit = {}
+) {
     val unknown = item.isUnknown
-    val leftBarColor = if (unknown) Color(0xFFef4444) else when (item.asset?.status) {
-        "available"    -> Color(0xFF4ade80)
-        "checked_out"  -> Color(0xFFf59e0b)
-        "lost"         -> Color(0xFFef4444)
-        "repair"       -> Color(0xFF9ca3af)
-        else           -> Color(0xFF9ca3af)
+    val isContainer = item.container != null
+    val leftBarColor = when {
+        isContainer -> Color(0xFF3B82F6)
+        unknown     -> Color(0xFFef4444)
+        else -> when (item.asset?.status) {
+            "available"    -> Color(0xFF4ade80)
+            "checked_out"  -> Color(0xFFf59e0b)
+            "lost"         -> Color(0xFFef4444)
+            "repair"       -> Color(0xFF9ca3af)
+            else           -> Color(0xFF9ca3af)
+        }
     }
     val displayId = item.rawCode.let { if (it.length > 4) it.take(4) + ".." else it }
     val cardBorder = if (unknown)
         BorderStroke(1.5.dp, Color(0xFFef4444))
     else
-        BorderStroke(1.dp, Color(0xFFE5E7EB))
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(),
         shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = cardBorder,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Min),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Colored left bar
-            Box(
+        Column {
+            Row(
                 modifier = Modifier
-                    .width(6.dp)
-                    .fillMaxHeight()
-                    .background(leftBarColor)
-            )
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min)
+                    .let { m -> onToggleExpand?.let { m.clickable(onClick = it) } ?: m },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Colored left bar
+                Box(
+                    modifier = Modifier
+                        .width(6.dp)
+                        .fillMaxHeight()
+                        .background(leftBarColor)
+                )
 
-            // ID (monospace, large, bold)
-            Text(
-                displayId,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp,
-                modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 12.dp, bottom = 12.dp)
-            )
+                // ID (monospace, large, bold)
+                Text(
+                    displayId,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 12.dp, bottom = 12.dp)
+                )
 
-            // Name + type / unknown label
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(vertical = 10.dp)
+                // Name + type / unknown label / container summary
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 10.dp)
+                ) {
+                    if (isContainer) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Inventory2,
+                                contentDescription = null,
+                                tint = Color(0xFF3B82F6),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                item.container?.container?.name ?: "",
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        val totalCount = (item.container?.assetCount ?: 0) + item.pendingAssets.size
+                        Text(
+                            "$totalCount asset${if (totalCount != 1) "s" else ""} inside",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    } else {
+                        Text(
+                            if (unknown) "Unknown Item" else item.asset?.name ?: "",
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 14.sp,
+                            color = if (unknown) Color(0xFFef4444) else Color.Unspecified,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            if (unknown) "Not found in system" else item.asset?.type ?: "",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                }
+
+                // Expand/collapse chevron — containers only, check_out/update modes only
+                if (onToggleExpand != null) {
+                    IconButton(onClick = onToggleExpand, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (isExpanded) "Minimize" else "Expand",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // Remove button
+                IconButton(onClick = onRemove, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Remove",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            if (isExpanded && item.container != null) {
+                ExpandedContainerContents(
+                    existingAssets = item.container.assets,
+                    pendingAssets = item.pendingAssets,
+                    onRemovePending = onRemovePendingAsset
+                )
+            }
+
+            if (isNewest && item.asset != null) {
+                ExpandedItemDetails(item.asset)
+            }
+        }
+    }
+}
+
+// ── Expanded container contents (check_out/update modes) ───────────────────
+
+@Composable
+private fun ExpandedContainerContents(
+    existingAssets: List<Asset>,
+    pendingAssets: List<Asset>,
+    onRemovePending: (String) -> Unit
+) {
+    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        existingAssets.forEach { asset ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    if (unknown) "Unknown Item" else item.asset?.name ?: "",
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp,
-                    color = if (unknown) Color(0xFFef4444) else Color.Unspecified,
+                    asset.name,
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    if (unknown) "Not found in system" else item.asset?.type ?: "",
-                    fontSize = 12.sp,
-                    color = Color(0xFF6B7280),
-                    maxLines = 1
-                )
-            }
-
-            // Remove button
-            IconButton(onClick = onRemove, modifier = Modifier.size(40.dp)) {
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = "Remove",
-                    tint = Color(0xFF9CA3AF),
-                    modifier = Modifier.size(16.dp)
+                    "already inside",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
+        pendingAssets.forEach { asset ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    asset.name,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Green,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    "just scanned",
+                    fontSize = 11.sp,
+                    color = Green,
+                    modifier = Modifier.padding(end = 6.dp)
+                )
+                IconButton(
+                    onClick = { onRemovePending(asset.assetId) },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Remove",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
+        if (existingAssets.isEmpty() && pendingAssets.isEmpty()) {
+            Text(
+                "No items yet — scan an asset to add it here",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 6.dp)
+            )
+        }
+    }
+}
+
+// ── Expanded newest-item details ────────────────────────────────────────────
+
+@Composable
+private fun ExpandedItemDetails(asset: Asset?) {
+    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        ExpandedDetailItem(label = "Cost") { CostTierBadge(asset?.cost) }
+        ExpandedDetailItem(label = "Last User") {
+            Text(
+                userInitials(asset?.currentUserName),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        ExpandedDetailItem(label = "Last Seen") {
+            Text(
+                formatShortDate(asset?.updatedAt),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExpandedDetailItem(label: String, value: @Composable () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        value()
+        Spacer(Modifier.height(2.dp))
+        Text(label, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun CostTierBadge(cost: String?) {
+    val (label, color) = when (cost) {
+        "Low"  -> "L" to Color(0xFF4ade80)
+        "Med"  -> "M" to Color(0xFFf59e0b)
+        "High" -> "H" to Color(0xFFef4444)
+        else   -> null
+    } ?: (null to null)
+
+    if (label != null && color != null) {
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(color),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        }
+    } else {
+        Text("—", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+private fun userInitials(name: String?): String {
+    if (name.isNullOrBlank()) return "—"
+    return name.trim()
+        .split(Regex("\\s+"))
+        .mapNotNull { it.firstOrNull()?.uppercaseChar() }
+        .take(2)
+        .joinToString("")
+}
+
+private fun formatShortDate(iso: String?): String {
+    if (iso.isNullOrBlank()) return "—"
+    return try {
+        ZonedDateTime.parse(iso).format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
+    } catch (_: Exception) {
+        "—"
     }
 }
 
 // ── Bottom bar helpers ──────────────────────────────────────────────────────
 
 @Composable
-private fun GpsStatusRow(state: ScanUiState) {
-    val gpsText = when {
-        state.gpsLat != null && state.gpsAddress != null ->
-            "GPS: ${state.gpsAddress}"
-        state.gpsLat != null ->
-            "GPS: ${"%.5f".format(state.gpsLat)}, ${"%.5f".format(state.gpsLng)}"
-        else -> "GPS: Detecting..."
-    }
+private fun ScannerStatusBar(
+    mode: String,
+    scannerType: String,
+    gpsLat: Double?,
+    gpsError: Boolean,
+    validCount: Int,
+    invalidCount: Int,
+    scannerStatus: String,
+    scanMode: String,
+    lastScannedData: String
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .height(36.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            Icons.Default.LocationOn,
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-            tint = if (state.gpsLat != null) Color(0xFF22C55E) else Color(0xFF9CA3AF)
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(gpsText, fontSize = 13.sp, color = Color(0xFF6B7280))
+        // Left section — INTERNAL scanner mode only
+        if (scannerType == "internal") {
+            ScannerStatusDot(scannerStatus)
+            ScanModeBadge(scanMode)
+            LastScannedDataBox(lastScannedData)
+            StatusBarDivider()
+        }
+
+        // GPS status — update mode only
+        if (mode == "update") {
+            val (gpsLabel, gpsColor) = when {
+                gpsError -> "Error" to Color(0xFFEF4444)
+                gpsLat != null -> "OK" to Color(0xFF22C55E)
+                else -> "Fetching" to Color(0xFF9CA3AF)
+            }
+            Row(
+                modifier = Modifier.widthIn(min = 64.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.LocationOn,
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                    tint = gpsColor
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(gpsLabel, fontSize = 11.sp, color = gpsColor)
+            }
+            StatusBarDivider()
+        }
+
+        // Valid (known) items
+        Row(
+            modifier = Modifier.widthIn(min = 32.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = "Valid items",
+                modifier = Modifier.size(12.dp),
+                tint = Color(0xFF22C55E)
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(validCount.toString(), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+        }
+
+        // Invalid (unknown) items
+        Row(
+            modifier = Modifier.widthIn(min = 32.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Cancel,
+                contentDescription = "Invalid items",
+                modifier = Modifier.size(12.dp),
+                tint = Color(0xFFEF4444)
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(invalidCount.toString(), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LocationPicker(
-    locations: List<Location>,
-    selectedId: String?,
-    onSelect: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val selectedName = locations.find { it.id == selectedId }?.name ?: "Select location"
+private fun StatusBarDivider() {
+    Box(
+        modifier = Modifier
+            .width(1.dp)
+            .height(16.dp)
+            .background(MaterialTheme.colorScheme.outline)
+    )
+}
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = modifier
+@Composable
+private fun ScannerStatusDot(status: String) {
+    val color = when (status) {
+        "WAITING", "SCANNING" -> Color(0xFF4ade80)
+        "IDLE" -> Color(0xFFf59e0b)
+        else -> Color(0xFFef4444) // DISABLED, ERROR, UNKNOWN
+    }
+    Box(
+        modifier = Modifier
+            .size(10.dp)
+            .clip(CircleShape)
+            .background(color)
+    )
+}
+
+@Composable
+internal fun ScanModeBadge(mode: String) {
+    val color = when (mode) {
+        "1D" -> Color(0xFF3b82f6)
+        "2D" -> Color(0xFF4ade80)
+        "BULK" -> Color(0xFFf59e0b)
+        "MULTI" -> Color(0xFFa855f7)
+        else -> Color(0xFF9CA3AF)
+    }
+    Box(
+        modifier = Modifier
+            .widthIn(min = 40.dp)
+            .clip(RoundedCornerShape(percent = 50))
+            .background(color)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center
     ) {
-        OutlinedTextField(
-            value = selectedName,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Check-in location") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor()
+        Text(mode, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+    }
+}
+
+@Composable
+private fun LastScannedDataBox(data: String) {
+    Box(
+        modifier = Modifier
+            .width(96.dp)
+            .height(20.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 6.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Text(
+            data.ifEmpty { "—" },
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+            maxLines = 1,
+            softWrap = false
         )
-        ExposedDropdownMenu(
+    }
+}
+
+// ── Scanner mode selector (top bar) ─────────────────────────────────────────
+
+internal data class ScanModeOption(val mode: String, val description: String)
+
+internal val SCAN_MODE_OPTIONS = listOf(
+    ScanModeOption("1D", "Linear barcodes only, faster decode"),
+    ScanModeOption("2D", "QR, DataMatrix, PDF417, Aztec only"),
+    ScanModeOption("BULK", "All decoders, continuous scanning after each decode"),
+    ScanModeOption("MULTI", "Multiple barcodes per trigger press")
+)
+
+@Composable
+internal fun ScanModeButton(currentMode: String, onModeSelected: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            ScanModeBadge(currentMode)
+        }
+        DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
-            if (locations.isEmpty()) {
+            SCAN_MODE_OPTIONS.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text("No locations set up yet", color = Color(0xFF9CA3AF)) },
-                    onClick = { expanded = false }
-                )
-            }
-            locations.forEach { loc ->
-                DropdownMenuItem(
-                    text = { Text(loc.name) },
-                    onClick = { onSelect(loc.id); expanded = false }
+                    text = {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                ScanModeBadge(option.mode)
+                                if (option.mode == currentMode) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = "Current mode",
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                option.description,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    onClick = {
+                        onModeSelected(option.mode)
+                        expanded = false
+                    }
                 )
             }
         }
@@ -705,6 +1255,7 @@ fun modeColor(mode: String) = when (mode) {
     "check_out" -> Blue
     "check_in"  -> Green
     "update"    -> Purple
+    "rent_out"  -> Amber
     else        -> Grey
 }
 
@@ -712,6 +1263,7 @@ fun modeTitle(mode: String) = when (mode) {
     "check_out" -> "Check Out"
     "check_in"  -> "Check In"
     "update"    -> "Update"
+    "rent_out"  -> "Rent Out"
     else        -> "Inquiry"
 }
 

@@ -28,5 +28,6 @@ data class InventoryEventInsert(
     @SerialName("location_id") val locationId: String? = null,
     @SerialName("gps_lat") val gpsLat: Double? = null,
     @SerialName("gps_lng") val gpsLng: Double? = null,
-    @SerialName("gps_address") val gpsAddress: String? = null
+    @SerialName("gps_address") val gpsAddress: String? = null,
+    val note: String? = null
 )

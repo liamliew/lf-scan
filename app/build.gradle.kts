@@ -91,6 +91,7 @@ dependencies {
     val supabaseVersion = "3.0.2"
     implementation(platform("io.github.jan-tennert.supabase:bom:$supabaseVersion"))
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
+    implementation("io.github.jan-tennert.supabase:storage-kt")
 
     // Ktor HTTP engine (required by Supabase)
     implementation("io.ktor:ktor-client-android:3.0.3")
