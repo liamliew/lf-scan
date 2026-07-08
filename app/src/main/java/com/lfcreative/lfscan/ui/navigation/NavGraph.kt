@@ -17,6 +17,7 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.lfcreative.lfscan.MainActivity
+import com.lfcreative.lfscan.ui.screen.ActivityScreen
 import com.lfcreative.lfscan.ui.screen.AssetDetailScreen
 import com.lfcreative.lfscan.ui.screen.AssetsScreen
 import com.lfcreative.lfscan.ui.screen.CommitResultScreen
@@ -43,6 +44,7 @@ sealed class Screen(val route: String) {
     object ContinueSession : Screen("continue_session")
     object Home : Screen("home")
     object ModeSelect : Screen("mode_select")
+    object Activity : Screen("activity")
     object Locations : Screen("locations")
     object LocationDetail : Screen("location/{locationId}") {
         fun createRoute(locationId: String) = "location/$locationId"
@@ -55,8 +57,12 @@ sealed class Screen(val route: String) {
         fun createRoute(containerId: String) = "container_flow/$containerId"
     }
     object ContainerDetail : Screen("container/{containerId}")
-    object ContainerLocationScan : Screen("container/{containerId}/location_scan/{mode}") {
-        fun createRoute(containerId: String, mode: String) = "container/$containerId/location_scan/$mode"
+    object ContainerScannerTypeSelect : Screen("container/{containerId}/scanner_type_select/{mode}") {
+        fun createRoute(containerId: String, mode: String) = "container/$containerId/scanner_type_select/$mode"
+    }
+    object ContainerLocationScan : Screen("container/{containerId}/location_scan/{mode}/{scannerType}") {
+        fun createRoute(containerId: String, mode: String, scannerType: String) =
+            "container/$containerId/location_scan/$mode/$scannerType"
     }
 
     // Nested graph — ScannerTypeSelect, LocationScan, Scanner, and CommitResult all share one ScanViewModel
@@ -151,7 +157,7 @@ fun LFScanNavGraph() {
                 onNavigateToAssets = { navController.navigate(Screen.Assets.route) },
                 onNavigateToLocations = { navController.navigate(Screen.Locations.route) },
                 onNavigateToContainers = { navController.navigate(Screen.Containers.route) },
-                onNavigateToActivity = { /* No Activity screen exists yet */ },
+                onNavigateToActivity = { navController.navigate(Screen.Activity.route) },
                 onSignOut = {
                     homeViewModel.signOut {
                         navController.navigate(Screen.Pin.route) {
@@ -160,6 +166,15 @@ fun LFScanNavGraph() {
                     }
                 },
                 viewModel = homeViewModel
+            )
+        }
+
+        composable(Screen.Activity.route) {
+            ActivityScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateToAsset = { assetId ->
+                    navController.navigate(Screen.AssetDetail.createRoute(assetId))
+                }
             )
         }
 
@@ -263,13 +278,13 @@ fun LFScanNavGraph() {
                         navController.navigate(Screen.AssetDetail.createRoute(assetId))
                     },
                     onNavigateToLocationScan = { mode ->
-                        navController.navigate(Screen.ContainerLocationScan.createRoute(containerId, mode))
+                        navController.navigate(Screen.ContainerScannerTypeSelect.createRoute(containerId, mode))
                     }
                 )
             }
 
             composable(
-                route = Screen.ContainerLocationScan.route,
+                route = Screen.ContainerScannerTypeSelect.route,
                 arguments = listOf(
                     navArgument("containerId") { type = NavType.StringType },
                     navArgument("mode") { type = NavType.StringType }
@@ -277,6 +292,33 @@ fun LFScanNavGraph() {
             ) { backStackEntry ->
                 val containerId = backStackEntry.arguments?.getString("containerId") ?: ""
                 val mode = backStackEntry.arguments?.getString("mode") ?: "check_in"
+                // "update_location" is the container-operation mode; ScannerTypeSelectScreen only
+                // uses "mode" for its title/accent color, so map it to "update" for display.
+                val displayMode = if (mode == "update_location") "update" else mode
+                val goToLocationScan: (String, Boolean) -> Unit = { scannerType, popSelf ->
+                    navController.navigate(Screen.ContainerLocationScan.createRoute(containerId, mode, scannerType)) {
+                        if (popSelf) popUpTo(Screen.ContainerScannerTypeSelect.createRoute(containerId, mode)) { inclusive = true }
+                    }
+                }
+                ScannerTypeSelectScreen(
+                    mode = displayMode,
+                    onBack = { navController.popBackStack() },
+                    onScannerTypeSelected = { scannerType -> goToLocationScan(scannerType, false) },
+                    onScannerTypeAutoSelected = { scannerType -> goToLocationScan(scannerType, true) }
+                )
+            }
+
+            composable(
+                route = Screen.ContainerLocationScan.route,
+                arguments = listOf(
+                    navArgument("containerId") { type = NavType.StringType },
+                    navArgument("mode") { type = NavType.StringType },
+                    navArgument("scannerType") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val containerId = backStackEntry.arguments?.getString("containerId") ?: ""
+                val mode = backStackEntry.arguments?.getString("mode") ?: "check_in"
+                val scannerType = backStackEntry.arguments?.getString("scannerType") ?: "camera"
                 val parentEntry = remember(backStackEntry) {
                     navController.getBackStackEntry(Screen.ContainerFlow.createRoute(containerId))
                 }
@@ -286,7 +328,7 @@ fun LFScanNavGraph() {
                 val displayMode = if (mode == "update_location") "update" else mode
                 LocationScanScreen(
                     mode = displayMode,
-                    scannerType = "camera",
+                    scannerType = scannerType,
                     onBack = { navController.popBackStack() },
                     onLocationConfirmed = { locationId ->
                         viewModel.commitOperation(mode, locationId) {
@@ -312,19 +354,24 @@ fun LFScanNavGraph() {
                     navController.getBackStackEntry(Screen.ScanFlow.createRoute(mode))
                 }
                 val viewModel: ScanViewModel = hiltViewModel(parentEntry)
+                val goToNextScreen: (String, Boolean) -> Unit = { scannerType, popSelf ->
+                    val route = when (mode) {
+                        "check_in" -> Screen.LocationScan.createRoute(mode, scannerType)
+                        "rent_out" -> Screen.RentDetails.createRoute(mode, scannerType)
+                        else -> Screen.Scanner.createRoute(mode, scannerType)
+                    }
+                    navController.navigate(route) {
+                        if (popSelf) popUpTo(Screen.ScannerTypeSelect.createRoute(mode)) { inclusive = true }
+                    }
+                }
                 ScannerTypeSelectScreen(
                     mode = mode,
                     onBack = {
                         viewModel.clearModeAndScannerType()
                         navController.popBackStack(Screen.ModeSelect.route, inclusive = false)
                     },
-                    onScannerTypeSelected = { scannerType ->
-                        when (mode) {
-                            "check_in" -> navController.navigate(Screen.LocationScan.createRoute(mode, scannerType))
-                            "rent_out" -> navController.navigate(Screen.RentDetails.createRoute(mode, scannerType))
-                            else -> navController.navigate(Screen.Scanner.createRoute(mode, scannerType))
-                        }
-                    },
+                    onScannerTypeSelected = { scannerType -> goToNextScreen(scannerType, false) },
+                    onScannerTypeAutoSelected = { scannerType -> goToNextScreen(scannerType, true) },
                     viewModel = viewModel
                 )
             }
@@ -442,10 +489,17 @@ fun LFScanNavGraph() {
         }
 
         // Declared after NavHost so it sits on top of the back-press dispatcher stack and
-        // intercepts before Navigation-Compose's own back handling — while Kiosk Mode is active,
-        // back presses open the admin unlock gate instead of popping the back stack.
+        // intercepts before Navigation-Compose's own back handling. While Kiosk Mode is active,
+        // normal in-app back navigation (e.g. backing out of a scan page to Mode Select) still
+        // works as usual — only once there's nowhere left to pop (i.e. back would otherwise exit
+        // the app) does the admin unlock gate take over, which is the only thing Kiosk Mode is
+        // meant to block.
         BackHandler(enabled = isKioskModeActive) {
-            MainActivity.showAdminUnlockDialog.value = true
+            if (navController.previousBackStackEntry != null) {
+                navController.popBackStack()
+            } else {
+                MainActivity.showAdminUnlockDialog.value = true
+            }
         }
 
         if (showAdminUnlockDialog) {

@@ -44,6 +44,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.CameraAlt
@@ -884,7 +885,7 @@ private fun PinKey(
             onClick = onBackspace,
             modifier = Modifier.size(keySize)
         ) {
-            Icon(Icons.Default.Backspace, contentDescription = "Delete")
+            Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = "Delete")
         }
         "ok" -> FilledIconButton(
             onClick = onConfirm,

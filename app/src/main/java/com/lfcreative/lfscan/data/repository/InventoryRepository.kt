@@ -25,6 +25,7 @@ import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Count
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.query.PostgrestUpdate
 import io.github.jan.supabase.storage.storage
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -66,6 +67,18 @@ class InventoryRepository @Inject constructor() {
             }
             .decodeSingleOrNull<InventoryEvent>()
 
+    // Only sets last_known_* when a GPS fix was actually captured this session (lat/lng both
+    // non-null) — otherwise the columns are left untouched entirely (no set() call at all), so a
+    // missed/denied GPS fix never overwrites a previously known location with null.
+    private fun PostgrestUpdate.setLastKnownLocation(lat: Double?, lng: Double?, address: String?) {
+        if (lat != null && lng != null) {
+            set("last_known_lat", lat)
+            set("last_known_lng", lng)
+            set("last_known_address", address)
+            set("last_known_at", java.time.Instant.now().toString())
+        }
+    }
+
     suspend fun updateAssetStatus(
         assetId: String,
         status: String,
@@ -73,7 +86,10 @@ class InventoryRepository @Inject constructor() {
         userId: String? = null,
         userName: String? = null,
         renterContact: String? = null,
-        rentalDueDate: String? = null
+        rentalDueDate: String? = null,
+        gpsLat: Double? = null,
+        gpsLng: Double? = null,
+        gpsAddress: String? = null
     ) {
         supabase.from("inventory_assets")
             .update({
@@ -83,6 +99,7 @@ class InventoryRepository @Inject constructor() {
                 set("current_user_name", userName)
                 set("renter_contact", renterContact)
                 set("rental_due_date", rentalDueDate)
+                setLastKnownLocation(gpsLat, gpsLng, gpsAddress)
             }) {
                 filter { eq("asset_id", assetId) }
             }
@@ -174,6 +191,15 @@ class InventoryRepository @Inject constructor() {
             .select {
                 filter { eq("asset_id", assetId) }
                 order("created_at", Order.DESCENDING)
+            }
+            .decodeList<InventoryEvent>()
+
+    // Global activity feed — most recent events across every asset, newest first.
+    suspend fun getRecentEvents(limit: Long = 200): List<InventoryEvent> =
+        supabase.from("inventory_events")
+            .select {
+                order("created_at", Order.DESCENDING)
+                limit(limit)
             }
             .decodeList<InventoryEvent>()
 
@@ -460,6 +486,7 @@ class InventoryRepository @Inject constructor() {
                         set("current_location_id", noLocation)
                         set("renter_contact", noUser)
                         set("rental_due_date", noUser)
+                        setLastKnownLocation(gpsLat, gpsLng, gpsAddress)
                     }) { filter { eq("container_id", containerId) } }
 
                 containerAssets.forEach { asset ->
@@ -505,6 +532,7 @@ class InventoryRepository @Inject constructor() {
                         set("current_location_id", noLocation)
                         set("renter_contact", renterContact)
                         set("rental_due_date", rentalDueDate)
+                        setLastKnownLocation(gpsLat, gpsLng, gpsAddress)
                     }) { filter { eq("container_id", containerId) } }
 
                 containerAssets.forEach { asset ->
@@ -550,6 +578,7 @@ class InventoryRepository @Inject constructor() {
                         set("current_location_id", locationId)
                         set("renter_contact", noUser)
                         set("rental_due_date", noUser)
+                        setLastKnownLocation(gpsLat, gpsLng, gpsAddress)
                     }) { filter { eq("container_id", containerId) } }
 
                 containerAssets.forEach { asset ->
@@ -586,7 +615,10 @@ class InventoryRepository @Inject constructor() {
                     }
 
                 supabase.from("inventory_assets")
-                    .update({ set("current_location_id", locationId) }) {
+                    .update({
+                        set("current_location_id", locationId)
+                        setLastKnownLocation(gpsLat, gpsLng, gpsAddress)
+                    }) {
                         filter { eq("container_id", containerId) }
                     }
 

@@ -12,14 +12,18 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.lfcreative.lfscan.data.repository.InventoryRepository
 import com.lfcreative.lfscan.session.SessionDataStore
 import com.lfcreative.lfscan.ui.navigation.LFScanNavGraph
 import com.lfcreative.lfscan.ui.theme.LFScanTheme
 import com.lfcreative.lfscan.ui.theme.ThemeMode
+import com.lfcreative.lfscan.ui.theme.resolveDarkTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -188,6 +192,18 @@ class MainActivity : ComponentActivity() {
                 "light" -> ThemeMode.LIGHT
                 "dark" -> ThemeMode.DARK
                 else -> ThemeMode.SYSTEM
+            }
+            // enableEdgeToEdge() only sets the status/nav bar icon appearance once, from the
+            // system theme at launch — it doesn't track the in-app theme override (Settings ->
+            // Light/Dark), so switching to Dark while the system is in Light mode left the status
+            // bar clock/icons rendered dark-on-dark and invisible. Re-apply on every recomposition
+            // so it always matches what's actually on screen.
+            val darkTheme = resolveDarkTheme(themeMode)
+            val view = LocalView.current
+            SideEffect {
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.isAppearanceLightStatusBars = !darkTheme
+                controller.isAppearanceLightNavigationBars = !darkTheme
             }
             LFScanTheme(themeMode = themeMode) {
                 LFScanNavGraph()

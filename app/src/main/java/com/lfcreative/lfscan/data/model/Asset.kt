@@ -24,7 +24,11 @@ data class Asset(
     @SerialName("container_locked") val containerLocked: Boolean = false,
     @SerialName("renter_contact") val renterContact: String? = null,
     @SerialName("rental_due_date") val rentalDueDate: String? = null,
-    @SerialName("updated_at") val updatedAt: String? = null
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("last_known_lat") val lastKnownLat: Double? = null,
+    @SerialName("last_known_lng") val lastKnownLng: Double? = null,
+    @SerialName("last_known_address") val lastKnownAddress: String? = null,
+    @SerialName("last_known_at") val lastKnownAt: String? = null
 )
 
 // Separate insert-only class to avoid sending a null updated_at to the DB,

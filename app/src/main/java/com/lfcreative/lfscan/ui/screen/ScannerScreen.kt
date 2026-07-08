@@ -421,16 +421,16 @@ fun ScannerScreen(
                 else
                     Modifier.fillMaxWidth().height(220.dp).clipToBounds()
             ) {
-                when (scannerType) {
-                    "camera" -> CameraTopZone(
+                if (scannerType == "camera") {
+                    CameraTopZone(
                         hasCameraPermission = hasCameraPermission,
                         flashColor = flashColor,
                         torchEnabled = userTorchEnabled,
                         onTorchToggle = { userTorchEnabled = !userTorchEnabled },
-                        onBarcodeDetected = if (mode == "inquiry") viewModel::processInquiryScan
-                                            else viewModel::processScannedCode
+                        onBarcodeDetected = onHardwareScan
                     )
-                    "external", "internal" -> CounterTopZone(
+                } else {
+                    CounterTopZone(
                         count = state.scannedItems.size,
                         flashColor = flashColor,
                         modeAccent = modeAccent,
@@ -440,9 +440,11 @@ fun ScannerScreen(
                         onScanActiveChange = { isScanActive = it },
                         dataWedgeManager = dataWedgeManager
                     )
-                    else -> ManualTopZone(onSubmit = viewModel::processScannedCode)
                 }
             }
+
+            // ── MANUAL ENTRY (always available, regardless of scanner type) ─
+            ManualEntryRow(onSubmit = onHardwareScan)
 
             // ── SCANNED ITEMS LIST (scrollable) — hidden in inquiry mode ────
             if (mode != "inquiry") Box(
@@ -693,45 +695,41 @@ internal fun CounterTopZone(
 }
 
 @Composable
-private fun ManualTopZone(onSubmit: (String) -> Unit) {
+private fun ManualEntryRow(onSubmit: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
 
-    Box(
+    Row(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Enter Asset ID") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = {
-                    val code = text.trim()
-                    if (code.isNotEmpty()) {
-                        onSubmit(code)
-                        text = ""
-                    }
-                })
-            )
-            Button(
-                onClick = {
-                    val code = text.trim()
-                    if (code.isNotEmpty()) {
-                        onSubmit(code)
-                        text = ""
-                    }
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            label = { Text("Enter Asset ID") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = {
+                val code = text.trim()
+                if (code.isNotEmpty()) {
+                    onSubmit(code)
+                    text = ""
                 }
-            ) {
-                Text("Add")
+            })
+        )
+        Button(
+            onClick = {
+                val code = text.trim()
+                if (code.isNotEmpty()) {
+                    onSubmit(code)
+                    text = ""
+                }
             }
+        ) {
+            Text("Add")
         }
     }
 }

@@ -62,12 +62,15 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 @Composable
+fun resolveDarkTheme(themeMode: ThemeMode): Boolean = when (themeMode) {
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+}
+
+@Composable
 fun LFScanTheme(themeMode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -> Unit) {
-    val darkTheme = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
+    val darkTheme = resolveDarkTheme(themeMode)
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme,
         content = content

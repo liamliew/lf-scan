@@ -40,6 +40,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -612,7 +613,7 @@ private fun EditForm(
                 trailingIcon = {
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = statusExpanded)
                 },
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
             )
             ExposedDropdownMenu(
                 expanded = statusExpanded,
@@ -642,7 +643,7 @@ private fun EditForm(
                 trailingIcon = {
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = locationExpanded)
                 },
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
             )
             ExposedDropdownMenu(
                 expanded = locationExpanded,
@@ -671,26 +672,23 @@ private fun EditForm(
 }
 
 // ── Activity Timeline ─────────────────────────────────────────────────────────
+// eventDotColor/eventDescription/formatTimestamp are also used by ActivityScreen's global feed.
 
-@Composable
-private fun EventRow(
-    event: InventoryEvent,
-    locationMap: Map<String, String>,
-    isLast: Boolean
-) {
-    val dotColor = when (event.eventType) {
-        "checkin"  -> Color(0xFF4ade80)
-        "checkout" -> Color(0xFFf59e0b)
-        "location" -> Color(0xFFA855F7)
-        "lost"     -> Color(0xFFef4444)
-        "created"  -> Color(0xFF3B82F6)
-        "edited"   -> Color(0xFF9ca3af)
-        "repair"   -> Color(0xFFf97316)
-        "rented"   -> Color(0xFFa855f7)
-        else       -> Color(0xFF9ca3af)
-    }
+internal fun eventDotColor(eventType: String): Color = when (eventType) {
+    "checkin"  -> Color(0xFF4ade80)
+    "checkout" -> Color(0xFFf59e0b)
+    "location" -> Color(0xFFA855F7)
+    "lost"     -> Color(0xFFef4444)
+    "created"  -> Color(0xFF3B82F6)
+    "edited"   -> Color(0xFF9ca3af)
+    "repair"   -> Color(0xFFf97316)
+    "rented"   -> Color(0xFFa855f7)
+    else       -> Color(0xFF9ca3af)
+}
+
+internal fun eventDescription(event: InventoryEvent, locationMap: Map<String, String>): String {
     val locationName = event.locationId?.let { locationMap[it] }
-    val description = when (event.eventType) {
+    return when (event.eventType) {
         "checkin"  -> "Checked in" + (locationName?.let { " to $it" } ?: "")
         "checkout" -> "Checked out by ${event.performedByName ?: "unknown"}"
         "location" -> "Location updated" + (locationName?.let { " to $it" } ?: "")
@@ -702,6 +700,16 @@ private fun EventRow(
         "rented"   -> "Rented out by ${event.performedByName ?: "unknown"}"
         else       -> event.eventType
     }
+}
+
+@Composable
+private fun EventRow(
+    event: InventoryEvent,
+    locationMap: Map<String, String>,
+    isLast: Boolean
+) {
+    val dotColor = eventDotColor(event.eventType)
+    val description = eventDescription(event, locationMap)
 
     Row(
         modifier = Modifier
@@ -765,7 +773,7 @@ private fun EventRow(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-private fun formatTimestamp(iso: String?): String {
+internal fun formatTimestamp(iso: String?): String {
     if (iso == null) return "—"
     return try {
         val zdt = ZonedDateTime.parse(iso)
