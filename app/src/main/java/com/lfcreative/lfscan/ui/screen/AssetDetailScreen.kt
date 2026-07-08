@@ -2,6 +2,7 @@ package com.lfcreative.lfscan.ui.screen
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -492,6 +495,7 @@ private fun InfoGrid(asset: Asset, location: Location?, container: Container? = 
             )
         }
         InfoRow("Last Seen", formatTimestamp(asset.updatedAt))
+        LastKnownLocationRow(asset)
 
         // Notes — full width
         Spacer(Modifier.height(4.dp))
@@ -507,6 +511,67 @@ private fun InfoGrid(asset: Asset, location: Location?, container: Container? = 
             color = MaterialTheme.colorScheme.surfaceVariant
         )
     }
+}
+
+// Unlike InfoRow, this needs an icon + tap target + a secondary caption line, so it's its own
+// composable rather than a plain label/value pair.
+@Composable
+private fun LastKnownLocationRow(asset: Asset) {
+    val context = LocalContext.current
+    val hasCoordinates = asset.lastKnownLat != null && asset.lastKnownLng != null
+    val valueText = asset.lastKnownAddress?.takeIf { it.isNotBlank() }
+        ?: if (hasCoordinates) "${asset.lastKnownLat}, ${asset.lastKnownLng}" else "—"
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 7.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Text(
+                "Last Known",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(90.dp)
+            )
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .let { m ->
+                        if (hasCoordinates) {
+                            m.clickable {
+                                openLocationInMaps(context, asset.lastKnownLat!!, asset.lastKnownLng!!)
+                            }
+                        } else m
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (hasCoordinates) {
+                    Icon(
+                        Icons.Default.LocationOn,
+                        contentDescription = "Open in maps",
+                        tint = Color(0xFF22C55E),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(valueText, fontSize = 14.sp)
+            }
+        }
+        asset.lastKnownAt?.let { at ->
+            Text(
+                "as of ${formatTimestamp(at)}",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 90.dp, top = 2.dp)
+            )
+        }
+    }
+    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
 }
 
 @Composable

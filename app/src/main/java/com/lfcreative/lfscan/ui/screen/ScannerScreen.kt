@@ -127,6 +127,11 @@ fun ScannerScreen(
     val currentMember by viewModel.currentMember.collectAsState(initial = null)
     val pendingContainerConfirmation by viewModel.pendingContainerConfirmation.collectAsState()
 
+    // Total physically-scanned count: each top-level item (asset, container, or unknown) counts
+    // as 1, plus every asset staged into an expanded container this session — a container scan
+    // followed by 3 assets scanned into it should read as 4, not 1.
+    val totalScannedCount = state.scannedItems.sumOf { 1 + it.pendingAssets.size }
+
     var hasCameraPermission by remember { mutableStateOf(false) }
     var hasFineLocation by remember { mutableStateOf(false) }
     var gpsError by remember { mutableStateOf(false) }
@@ -223,10 +228,22 @@ fun ScannerScreen(
         viewModel.setModeAndScannerType(mode, scannerType)
         if (mode == "check_in" && locationId != null) viewModel.setLocation(locationId)
         if (scannerType == "camera") cameraPermLauncher.launch(Manifest.permission.CAMERA)
-        if (mode == "update") locationPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        // Requested for every mode now, not just Update — Check In/Out/Mark Lost/Rent Out use it
+        // for a silent one-shot GPS snapshot (see captureGpsSnapshot below) rather than the
+        // visible, continuously-tracked location Update mode shows in its status bar.
+        locationPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         if (scannerType == "internal") {
             val savedMode = viewModel.loadSavedScanMode()
             dataWedgeManager.setScanMode(savedMode)
+        }
+    }
+
+    // Silent background GPS capture for every mode except Update (which already gets a visible,
+    // continuously-tracked fix below). One-shot with its own internal 10s timeout — never blocks
+    // scanning, and is skipped entirely if permission was denied above.
+    LaunchedEffect(hasFineLocation, mode) {
+        if (hasFineLocation && mode != "update") {
+            viewModel.captureGpsSnapshot()
         }
     }
 
@@ -370,7 +387,7 @@ fun ScannerScreen(
                             scannerType = scannerType,
                             gpsLat = state.gpsLat,
                             gpsError = gpsError,
-                            validCount = state.scannedItems.count { !it.isUnknown },
+                            validCount = state.scannedItems.filter { !it.isUnknown }.sumOf { 1 + it.pendingAssets.size },
                             invalidCount = state.scannedItems.count { it.isUnknown },
                             scannerStatus = scannerStatus,
                             scanMode = scanMode,
@@ -431,7 +448,7 @@ fun ScannerScreen(
                     )
                 } else {
                     CounterTopZone(
-                        count = state.scannedItems.size,
+                        count = totalScannedCount,
                         flashColor = flashColor,
                         modeAccent = modeAccent,
                         scannerType = scannerType,
@@ -967,32 +984,72 @@ private fun ExpandedItemDetails(asset: Asset?) {
             .padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        ExpandedDetailItem(label = "Cost") { CostTierBadge(asset?.cost) }
-        ExpandedDetailItem(label = "Last User") {
+        ExpandedDetailItem(label = "Cost", modifier = Modifier.weight(1f)) { CostTierBadge(asset?.cost) }
+        ExpandedDetailItem(label = "Last User", modifier = Modifier.weight(1f)) {
             Text(
                 userInitials(asset?.currentUserName),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
             )
         }
-        ExpandedDetailItem(label = "Last Seen") {
+        ExpandedDetailItem(label = "Last Seen", modifier = Modifier.weight(1f)) {
             Text(
                 formatShortDate(asset?.updatedAt),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
             )
+        }
+        ExpandedDetailItem(label = "Last Location", modifier = Modifier.weight(1f)) {
+            LastLocationValue(asset)
         }
     }
 }
 
 @Composable
-private fun ExpandedDetailItem(label: String, value: @Composable () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun ExpandedDetailItem(label: String, modifier: Modifier = Modifier, value: @Composable () -> Unit) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         value()
         Spacer(Modifier.height(2.dp))
-        Text(label, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    }
+}
+
+@Composable
+private fun LastLocationValue(asset: Asset?) {
+    val context = LocalContext.current
+    val hasCoordinates = asset?.lastKnownLat != null && asset.lastKnownLng != null
+    val fullText = asset?.lastKnownAddress?.takeIf { it.isNotBlank() }
+        ?: if (hasCoordinates) "${asset?.lastKnownLat}, ${asset?.lastKnownLng}" else null
+    val displayText = fullText?.let { if (it.length > 15) it.take(15) + "…" else it } ?: "—"
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = if (hasCoordinates) {
+            Modifier.clickable {
+                openLocationInMaps(context, asset!!.lastKnownLat!!, asset.lastKnownLng!!)
+            }
+        } else Modifier
+    ) {
+        if (hasCoordinates) {
+            Icon(
+                Icons.Default.LocationOn,
+                contentDescription = "Open in maps",
+                tint = Color(0xFF22C55E),
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(Modifier.width(2.dp))
+        }
+        Text(
+            displayText,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1
+        )
     }
 }
 

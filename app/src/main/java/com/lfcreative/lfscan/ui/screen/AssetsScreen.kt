@@ -219,7 +219,12 @@ fun AssetsScreen(
 }
 
 @Composable
-internal fun AssetCard(asset: Asset, onClick: () -> Unit) {
+internal fun AssetCard(
+    asset: Asset,
+    onClick: () -> Unit,
+    // Opt-in only (ContainerDetailScreen's asset list) — the plain Assets list is unchanged.
+    showLastKnownLocation: Boolean = false
+) {
     val leftBarColor = when (asset.status) {
         "available"   -> Color(0xFF4ade80)
         "checked_out" -> Color(0xFFf59e0b)
@@ -278,6 +283,17 @@ internal fun AssetCard(asset: Asset, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
+                if (showLastKnownLocation) {
+                    asset.lastKnownAddress?.takeIf { it.isNotBlank() }?.let { address ->
+                        Text(
+                            address,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
                 if (asset.status == "rented") {
                     val overdue = isRentalOverdue(asset.rentalDueDate)
                     Text(

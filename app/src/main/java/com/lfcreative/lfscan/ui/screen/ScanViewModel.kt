@@ -1,7 +1,14 @@
 package com.lfcreative.lfscan.ui.screen
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.location.Geocoder
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Looper
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lfcreative.lfscan.MainActivity
@@ -9,7 +16,7 @@ import com.lfcreative.lfscan.data.model.Asset
 import com.lfcreative.lfscan.data.model.ContainerWithDetails
 import com.lfcreative.lfscan.data.model.InventoryEvent
 import com.lfcreative.lfscan.data.model.InventoryEventInsert
-import com.lfcreative.lfscan.data.model.Location
+import com.lfcreative.lfscan.data.model.Location as LocationModel
 import com.lfcreative.lfscan.data.model.TeamMember
 import com.lfcreative.lfscan.data.repository.InventoryRepository
 import com.lfcreative.lfscan.session.SessionDataStore
@@ -24,7 +31,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 data class ScannedItem(
@@ -48,7 +57,7 @@ data class ScanUiState(
     val scannedItems: List<ScannedItem> = emptyList(),
     val committedItems: List<ScannedItem> = emptyList(),
     val skippedItems: List<ScannedItem> = emptyList(),
-    val locations: List<Location> = emptyList(),
+    val locations: List<LocationModel> = emptyList(),
     val locationId: String? = null,
     val isCommitting: Boolean = false,
     val flash: ScanFlash = ScanFlash.NONE,
@@ -344,6 +353,51 @@ class ScanViewModel @Inject constructor(
             } catch (_: Exception) { null }
         }
 
+    // Silent, one-shot GPS fetch for Check In/Check Out/Update/Mark Lost/Rent Out — unlike
+    // Update mode's continuous, visible tracking, this just grabs a single fix (or gives up after
+    // 10s) so every mode can stamp last_known_* on commit without showing any GPS UI. No-ops if
+    // permission isn't granted, or if this session already has a fix (e.g. Update mode's own
+    // continuous tracking already populated gpsLat/gpsLng).
+    @Suppress("DEPRECATION")
+    fun captureGpsSnapshot() {
+        if (_state.value.gpsLat != null) return
+        val hasPermission = ContextCompat.checkSelfPermission(
+            appContext, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasPermission) return
+
+        viewModelScope.launch {
+            val locationManager =
+                appContext.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return@launch
+            val location = withTimeoutOrNull(10_000L) {
+                suspendCancellableCoroutine<Location?> { cont ->
+                    val provider = when {
+                        locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+                        locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
+                        else -> null
+                    }
+                    if (provider == null) {
+                        cont.resume(null) { _, _, _ -> }
+                        return@suspendCancellableCoroutine
+                    }
+                    val listener = object : LocationListener {
+                        override fun onLocationChanged(loc: Location) {
+                            locationManager.removeUpdates(this)
+                            if (cont.isActive) cont.resume(loc) { _, _, _ -> }
+                        }
+                    }
+                    try {
+                        locationManager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+                    } catch (_: SecurityException) {
+                        if (cont.isActive) cont.resume(null) { _, _, _ -> }
+                    }
+                    cont.invokeOnCancellation { locationManager.removeUpdates(listener) }
+                }
+            }
+            location?.let { updateGps(it.latitude, it.longitude) }
+        }
+    }
+
     fun loadLastEvent(assetUuid: String) {
         viewModelScope.launch {
             try {
@@ -458,7 +512,10 @@ class ScanViewModel @Inject constructor(
                                 "rent_out"                -> dueDateIso
                                 "check_in", "check_out"   -> null
                                 else                       -> asset.rentalDueDate
-                            }
+                            },
+                            gpsLat     = _state.value.gpsLat,
+                            gpsLng     = _state.value.gpsLng,
+                            gpsAddress = _state.value.gpsAddress
                         )
                         repository.insertEvent(
                             InventoryEventInsert(
