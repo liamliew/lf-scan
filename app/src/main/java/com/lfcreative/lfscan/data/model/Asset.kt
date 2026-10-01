@@ -24,6 +24,7 @@ data class Asset(
     @SerialName("container_locked") val containerLocked: Boolean = false,
     @SerialName("renter_contact") val renterContact: String? = null,
     @SerialName("rental_due_date") val rentalDueDate: String? = null,
+    @SerialName("expected_return_date") val expectedReturnDate: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
     @SerialName("last_known_lat") val lastKnownLat: Double? = null,
     @SerialName("last_known_lng") val lastKnownLng: Double? = null,
@@ -37,6 +38,11 @@ data class Asset(
 data class AssetInsert(
     @SerialName("asset_id") val assetId: String,
     val name: String,
+    // Defaults to the DB column's own default ("Other") — CreateAssetScreen never sets this
+    // today, so it keeps relying on that default; the inline "create a container's asset" path
+    // (see InventoryRepository.createContainerLocationWithNewAsset) is the first caller to pass
+    // "Container" explicitly.
+    val category: String = "Other",
     val type: String? = null,
     val size: String = "M",
     val cost: String = "Med",

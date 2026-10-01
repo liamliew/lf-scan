@@ -2,6 +2,7 @@ package com.lfcreative.lfscan.ui.navigation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -30,11 +31,21 @@ import com.lfcreative.lfscan.ui.screen.HomeScreen
 import com.lfcreative.lfscan.ui.screen.HomeViewModel
 import com.lfcreative.lfscan.ui.screen.KioskAdminUnlockDialog
 import com.lfcreative.lfscan.ui.screen.LocationDetailScreen
+import com.lfcreative.lfscan.ui.screen.LocationFormScreen
 import com.lfcreative.lfscan.ui.screen.LocationScanScreen
 import com.lfcreative.lfscan.ui.screen.LocationsScreen
+import com.lfcreative.lfscan.ui.screen.AuditHistoryScreen
+import com.lfcreative.lfscan.ui.screen.AuditResultsScreen
+import com.lfcreative.lfscan.ui.screen.AuditScanScreen
+import com.lfcreative.lfscan.ui.screen.AuditSetupScreen
 import com.lfcreative.lfscan.ui.screen.ModeSelectScreen
+import com.lfcreative.lfscan.ui.screen.PendingSyncScreen
+import com.lfcreative.lfscan.ui.screen.FloatingResultViewModel
+import com.lfcreative.lfscan.ui.screen.FloatingResultWindow
 import com.lfcreative.lfscan.ui.screen.PinScreen
-import com.lfcreative.lfscan.ui.screen.RentDetailsScreen
+import com.lfcreative.lfscan.ui.screen.QuickInquiryScreen
+import com.lfcreative.lfscan.ui.screen.RepeatCheckInScreen
+import com.lfcreative.lfscan.ui.screen.ReturnDateSelectScreen
 import com.lfcreative.lfscan.ui.screen.ScanViewModel
 import com.lfcreative.lfscan.ui.screen.ScannerScreen
 import com.lfcreative.lfscan.ui.screen.ScannerTypeSelectScreen
@@ -49,8 +60,22 @@ sealed class Screen(val route: String) {
     object LocationDetail : Screen("location/{locationId}") {
         fun createRoute(locationId: String) = "location/$locationId"
     }
+    // "new" as the path segment means Add rather than Edit — see LocationFormScreen.
+    object LocationForm : Screen("location_form/{locationId}") {
+        fun createRoute(locationId: String? = null) = "location_form/${locationId ?: "new"}"
+    }
 
     object Containers : Screen("containers")
+    object PendingSync : Screen("pending_sync")
+
+    object AuditSetup : Screen("audit")
+    object AuditHistory : Screen("audit/history")
+    object AuditScan : Screen("audit/{auditId}") {
+        fun createRoute(auditId: String) = "audit/$auditId"
+    }
+    object AuditResults : Screen("audit/{auditId}/results") {
+        fun createRoute(auditId: String) = "audit/$auditId/results"
+    }
 
     // Nested graph — ContainerDetail and ContainerLocationScan share one ContainerDetailViewModel
     object ContainerFlow : Screen("container_flow/{containerId}") {
@@ -64,6 +89,10 @@ sealed class Screen(val route: String) {
         fun createRoute(containerId: String, mode: String, scannerType: String) =
             "container/$containerId/location_scan/$mode/$scannerType"
     }
+
+    // FAB "quick scan" shortcut on Mode Select / Assets — camera-only asset lookup, skips
+    // ScannerTypeSelect entirely. Not part of the scan_flow nested graph (see QuickInquiryScreen).
+    object QuickInquiry : Screen("quick_inquiry")
 
     // Nested graph — ScannerTypeSelect, LocationScan, Scanner, and CommitResult all share one ScanViewModel
     object Assets : Screen("assets")
@@ -80,12 +109,17 @@ sealed class Screen(val route: String) {
     object LocationScan : Screen("location_scan/{mode}/{scannerType}") {
         fun createRoute(mode: String, scannerType: String) = "location_scan/$mode/$scannerType"
     }
-    object RentDetails : Screen("rent_details/{mode}/{scannerType}") {
-        fun createRoute(mode: String, scannerType: String) = "rent_details/$mode/$scannerType"
+    // Single-item, repeating "Check-In" mode (mode key "check_in_repeat") — its own screen,
+    // distinct from Bulk Check-In's Scanner + LocationScan pair.
+    object RepeatCheckIn : Screen("repeat_check_in/{mode}/{scannerType}") {
+        fun createRoute(mode: String, scannerType: String) = "repeat_check_in/$mode/$scannerType"
     }
-    object Scanner : Screen("scanner/{mode}/{scannerType}?locationId={locationId}") {
-        fun createRoute(mode: String, scannerType: String, locationId: String? = null) =
-            "scanner/$mode/$scannerType" + (locationId?.let { "?locationId=$it" } ?: "")
+    // Bulk Check-Out's "estimated return date" step, reached from Scanner's "Next" button.
+    object ReturnDateSelect : Screen("return_date_select/{mode}/{scannerType}") {
+        fun createRoute(mode: String, scannerType: String) = "return_date_select/$mode/$scannerType"
+    }
+    object Scanner : Screen("scanner/{mode}/{scannerType}") {
+        fun createRoute(mode: String, scannerType: String) = "scanner/$mode/$scannerType"
     }
     object CommitResult : Screen("commit_result/{mode}/{count}") {
         fun createRoute(mode: String, count: Int) = "commit_result/$mode/$count"
@@ -102,12 +136,20 @@ fun LFScanNavGraph() {
     val isKioskModeActive by MainActivity.isKioskModeActive.collectAsState()
     val showAdminUnlockDialog by MainActivity.showAdminUnlockDialog.collectAsState()
 
+    // Activity-scoped (not per-destination) — the single source of truth for the shared
+    // FloatingResultWindow, hosted below at the root so it can appear over any screen.
+    val floatingResultViewModel: FloatingResultViewModel = hiltViewModel(activity)
+    val floatingResultContent by floatingResultViewModel.content.collectAsState()
+    val inquiryResults by floatingResultViewModel.inquiryResults.collectAsState()
+
     // Wired once, centrally, rather than per-screen: popping the whole back stack to the PIN
     // route also tears down every nested-graph ViewModel (ScanViewModel, ContainerDetailViewModel)
     // along the way, which is what actually satisfies "clear all state" — doing this per-screen
     // would silently miss logout on any screen someone forgot to wire it into.
     DisposableEffect(navController) {
         MainActivity.onSessionTimeout = {
+            floatingResultViewModel.dismiss()
+            floatingResultViewModel.clearInquiryResults()
             navController.navigate(Screen.Pin.route) {
                 popUpTo(0) { inclusive = true }
             }
@@ -126,7 +168,10 @@ fun LFScanNavGraph() {
         }
     }
 
-    Box(Modifier) {
+    // fillMaxSize (rather than the previous bare Modifier) so FloatingResultWindow — a plain
+    // composable, not a Dialog — has definite full-screen bounds to bottom-align its card within,
+    // regardless of whatever the window/theme wrapper above this would otherwise imply.
+    Box(Modifier.fillMaxSize()) {
         NavHost(navController = navController, startDestination = Screen.Pin.route) {
 
         composable(Screen.Pin.route) {
@@ -158,6 +203,9 @@ fun LFScanNavGraph() {
                 onNavigateToLocations = { navController.navigate(Screen.Locations.route) },
                 onNavigateToContainers = { navController.navigate(Screen.Containers.route) },
                 onNavigateToActivity = { navController.navigate(Screen.Activity.route) },
+                onNavigateToPendingSync = { navController.navigate(Screen.PendingSync.route) },
+                onNavigateToAudit = { navController.navigate(Screen.AuditSetup.route) },
+                onNavigateToAuditHistory = { navController.navigate(Screen.AuditHistory.route) },
                 onSignOut = {
                     homeViewModel.signOut {
                         navController.navigate(Screen.Pin.route) {
@@ -189,7 +237,8 @@ fun LFScanNavGraph() {
                     navController.navigate(Screen.Pin.route) {
                         popUpTo(0) { inclusive = true }
                     }
-                }
+                },
+                onQuickScan = { navController.navigate(Screen.QuickInquiry.route) }
             )
         }
 
@@ -201,6 +250,18 @@ fun LFScanNavGraph() {
                 },
                 onNavigateToCreateAsset = {
                     navController.navigate(Screen.AssetCreate.createRoute())
+                },
+                onQuickScan = { navController.navigate(Screen.QuickInquiry.route) }
+            )
+        }
+
+        composable(Screen.QuickInquiry.route) {
+            QuickInquiryScreen(
+                onBack = { navController.popBackStack() },
+                onViewDetails = { assetId ->
+                    navController.navigate(Screen.AssetDetail.createRoute(assetId)) {
+                        popUpTo(Screen.QuickInquiry.route) { inclusive = true }
+                    }
                 }
             )
         }
@@ -226,6 +287,9 @@ fun LFScanNavGraph() {
                 onBack = { navController.popBackStack() },
                 onNavigateToLocation = { locationId ->
                     navController.navigate(Screen.LocationDetail.createRoute(locationId))
+                },
+                onAddLocation = {
+                    navController.navigate(Screen.LocationForm.createRoute(null))
                 }
             )
         }
@@ -243,7 +307,24 @@ fun LFScanNavGraph() {
                 },
                 onNavigateToCreateAsset = {
                     navController.navigate(Screen.AssetCreate.createRoute(locationId))
+                },
+                onEditLocation = {
+                    navController.navigate(Screen.LocationForm.createRoute(locationId))
                 }
+            )
+        }
+
+        composable(
+            route = Screen.LocationForm.route,
+            arguments = listOf(navArgument("locationId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val rawId = backStackEntry.arguments?.getString("locationId") ?: "new"
+            val locationId = rawId.takeUnless { it == "new" }
+            LocationFormScreen(
+                locationId = locationId,
+                onBack = { navController.popBackStack() },
+                onSaved = { navController.popBackStack() },
+                onViewAsset = { assetId -> navController.navigate(Screen.AssetDetail.createRoute(assetId)) }
             )
         }
 
@@ -252,6 +333,64 @@ fun LFScanNavGraph() {
                 onBack = { navController.popBackStack() },
                 onNavigateToContainer = { containerId ->
                     navController.navigate(Screen.ContainerFlow.createRoute(containerId))
+                }
+            )
+        }
+
+        composable(Screen.PendingSync.route) {
+            PendingSyncScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.AuditSetup.route) {
+            AuditSetupScreen(
+                onBack = { navController.popBackStack() },
+                onAuditStarted = { auditId ->
+                    navController.navigate(Screen.AuditScan.createRoute(auditId)) {
+                        popUpTo(Screen.AuditSetup.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // Registered before AuditScan's templated route so "audit/history" always resolves to
+        // this exact destination rather than the {auditId} pattern.
+        composable(Screen.AuditHistory.route) {
+            AuditHistoryScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateToResults = { auditId ->
+                    navController.navigate(Screen.AuditResults.createRoute(auditId))
+                },
+                onResumeAudit = { auditId ->
+                    navController.navigate(Screen.AuditScan.createRoute(auditId))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.AuditScan.route,
+            arguments = listOf(navArgument("auditId") { type = NavType.StringType })
+        ) {
+            AuditScanScreen(
+                onBack = { navController.popBackStack() },
+                onFinished = { auditId ->
+                    navController.navigate(Screen.AuditResults.createRoute(auditId)) {
+                        popUpTo(Screen.AuditSetup.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(
+            route = Screen.AuditResults.route,
+            arguments = listOf(navArgument("auditId") { type = NavType.StringType })
+        ) {
+            AuditResultsScreen(
+                onDone = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Home.route) { inclusive = true }
+                    }
                 }
             )
         }
@@ -356,8 +495,10 @@ fun LFScanNavGraph() {
                 val viewModel: ScanViewModel = hiltViewModel(parentEntry)
                 val goToNextScreen: (String, Boolean) -> Unit = { scannerType, popSelf ->
                     val route = when (mode) {
-                        "check_in" -> Screen.LocationScan.createRoute(mode, scannerType)
-                        "rent_out" -> Screen.RentDetails.createRoute(mode, scannerType)
+                        // Bulk Check-In now scans items first, then advances to the location step
+                        // via ScannerScreen's "Next" button — same as every other bulk mode, it
+                        // goes straight to Scanner.
+                        "check_in_repeat" -> Screen.RepeatCheckIn.createRoute(mode, scannerType)
                         else -> Screen.Scanner.createRoute(mode, scannerType)
                     }
                     navController.navigate(route) {
@@ -376,6 +517,10 @@ fun LFScanNavGraph() {
                 )
             }
 
+            // Reached from Scanner's "Next" button, AFTER items are already scanned (Bulk
+            // Check-In only — this is the only mode that routes here). Resolving a location here
+            // now commits every scanned item to it directly, rather than navigating forward to
+            // Scanner the way it used to when this step came before scanning.
             composable(
                 route = Screen.LocationScan.route,
                 arguments = listOf(
@@ -385,35 +530,84 @@ fun LFScanNavGraph() {
             ) { backStackEntry ->
                 val mode = backStackEntry.arguments?.getString("mode") ?: "check_in"
                 val scannerType = backStackEntry.arguments?.getString("scannerType") ?: "camera"
+                val parentEntry = remember(backStackEntry) {
+                    navController.getBackStackEntry(Screen.ScanFlow.createRoute(mode))
+                }
+                val viewModel: ScanViewModel = hiltViewModel(parentEntry)
+                val currentMember by viewModel.currentMember.collectAsState(initial = null)
                 LocationScanScreen(
                     mode = mode,
                     scannerType = scannerType,
                     onBack = { navController.popBackStack() },
                     onLocationConfirmed = { locationId ->
-                        navController.navigate(Screen.Scanner.createRoute(mode, scannerType, locationId))
+                        viewModel.setLocation(locationId)
+                        currentMember?.let { member ->
+                            viewModel.commitSession(mode, member) { count ->
+                                navController.navigate(Screen.CommitResult.createRoute(mode, count)) {
+                                    popUpTo(Screen.Scanner.createRoute(mode, scannerType)) { inclusive = true }
+                                }
+                            }
+                        }
                     }
                 )
             }
 
+            // Bulk Check-Out's "estimated return date" step, reached from Scanner's "Next"
+            // button after items are already scanned.
             composable(
-                route = Screen.RentDetails.route,
+                route = Screen.ReturnDateSelect.route,
                 arguments = listOf(
                     navArgument("mode") { type = NavType.StringType },
                     navArgument("scannerType") { type = NavType.StringType }
                 )
             ) { backStackEntry ->
-                val mode = backStackEntry.arguments?.getString("mode") ?: "rent_out"
+                val mode = backStackEntry.arguments?.getString("mode") ?: "check_out"
                 val scannerType = backStackEntry.arguments?.getString("scannerType") ?: "camera"
                 val parentEntry = remember(backStackEntry) {
                     navController.getBackStackEntry(Screen.ScanFlow.createRoute(mode))
                 }
                 val viewModel: ScanViewModel = hiltViewModel(parentEntry)
-                RentDetailsScreen(
+                val currentMember by viewModel.currentMember.collectAsState(initial = null)
+                val state by viewModel.state.collectAsState()
+                ReturnDateSelectScreen(
+                    itemCount = state.scannedItems.size,
                     onBack = { navController.popBackStack() },
                     onConfirmed = {
-                        navController.navigate(Screen.Scanner.createRoute(mode, scannerType))
+                        currentMember?.let { member ->
+                            viewModel.commitSession(mode, member) { count ->
+                                navController.navigate(Screen.CommitResult.createRoute(mode, count)) {
+                                    popUpTo(Screen.Scanner.createRoute(mode, scannerType)) { inclusive = true }
+                                }
+                            }
+                        }
                     },
                     viewModel = viewModel
+                )
+            }
+
+            // Single-item, repeating "Check-In" mode — its own screen (see RepeatCheckInScreen).
+            composable(
+                route = Screen.RepeatCheckIn.route,
+                arguments = listOf(
+                    navArgument("mode") { type = NavType.StringType },
+                    navArgument("scannerType") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val mode = backStackEntry.arguments?.getString("mode") ?: "check_in_repeat"
+                val scannerType = backStackEntry.arguments?.getString("scannerType") ?: "camera"
+                val parentEntry = remember(backStackEntry) {
+                    navController.getBackStackEntry(Screen.ScanFlow.createRoute(mode))
+                }
+                val viewModel: ScanViewModel = hiltViewModel(parentEntry)
+                RepeatCheckInScreen(
+                    scannerType = scannerType,
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onDone = { count ->
+                        navController.navigate(Screen.CommitResult.createRoute(mode, count)) {
+                            popUpTo(Screen.RepeatCheckIn.createRoute(mode, scannerType)) { inclusive = true }
+                        }
+                    }
                 )
             }
 
@@ -421,13 +615,11 @@ fun LFScanNavGraph() {
                 route = Screen.Scanner.route,
                 arguments = listOf(
                     navArgument("mode") { type = NavType.StringType },
-                    navArgument("scannerType") { type = NavType.StringType },
-                    navArgument("locationId") { type = NavType.StringType; nullable = true; defaultValue = null }
+                    navArgument("scannerType") { type = NavType.StringType }
                 )
             ) { backStackEntry ->
                 val mode = backStackEntry.arguments?.getString("mode") ?: "inquiry"
                 val scannerType = backStackEntry.arguments?.getString("scannerType") ?: "camera"
-                val locationId = backStackEntry.arguments?.getString("locationId")
                 val parentEntry = remember(backStackEntry) {
                     navController.getBackStackEntry(Screen.ScanFlow.createRoute(mode))
                 }
@@ -435,12 +627,17 @@ fun LFScanNavGraph() {
                 ScannerScreen(
                     mode = mode,
                     scannerType = scannerType,
-                    locationId = locationId,
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
                     onCommitSuccess = { count ->
                         navController.navigate(Screen.CommitResult.createRoute(mode, count)) {
                             popUpTo(Screen.Scanner.createRoute(mode, scannerType)) { inclusive = true }
+                        }
+                    },
+                    onAdvance = {
+                        when (mode) {
+                            "check_in" -> navController.navigate(Screen.LocationScan.createRoute(mode, scannerType))
+                            "check_out" -> navController.navigate(Screen.ReturnDateSelect.createRoute(mode, scannerType))
                         }
                     },
                     onNavigateToAsset = { assetId ->
@@ -483,7 +680,19 @@ fun LFScanNavGraph() {
             val created = backStackEntry.arguments?.getBoolean("created") ?: false
             AssetDetailScreen(
                 onBack = { navController.popBackStack() },
-                showCreatedMessage = created
+                showCreatedMessage = created,
+                // Addendum — this screen's ViewModel is fixed to the OLD id for its whole
+                // lifetime (SavedStateHandle-backed, "load fresh by id" convention — see
+                // AssetDetailViewModel), so after a rename we navigate to the new id's own route
+                // rather than trying to refresh in place. popUpTo...inclusive replaces the now-
+                // dead old-id entry instead of stacking on top of it, so Back goes to wherever
+                // this screen was originally opened from, not back to a screen for an id that no
+                // longer exists.
+                onRenamed = { newAssetId ->
+                    navController.navigate(Screen.AssetDetail.createRoute(newAssetId)) {
+                        popUpTo(Screen.AssetDetail.route) { inclusive = true }
+                    }
+                }
             )
         }
         }
@@ -501,6 +710,24 @@ fun LFScanNavGraph() {
                 MainActivity.showAdminUnlockDialog.value = true
             }
         }
+
+        // The ONE shared floating result window, hosted here (not inside any single destination)
+        // so it can appear over any screen — fed by Check-In's per-item card, the Inquiry FAB, and
+        // the global hardware-scanner trigger alike. Declared after BackHandler/the admin dialog
+        // so it draws on top of everything else in the stack.
+        FloatingResultWindow(
+            content = floatingResultContent,
+            onDismiss = { floatingResultViewModel.dismiss() },
+            onViewDetails = { assetId ->
+                floatingResultViewModel.dismiss()
+                navController.navigate(Screen.AssetDetail.createRoute(assetId))
+            },
+            inquiryResults = inquiryResults,
+            onDismissInquiryResult = { id -> floatingResultViewModel.dismissInquiryResult(id) },
+            onInquiryViewDetails = { assetId ->
+                navController.navigate(Screen.AssetDetail.createRoute(assetId))
+            }
+        )
 
         if (showAdminUnlockDialog) {
             KioskAdminUnlockDialog(

@@ -3,6 +3,7 @@ package com.lfcreative.lfscan.ui.screen
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lfcreative.lfscan.data.model.TeamMember
+import com.lfcreative.lfscan.data.offline.OfflineRepository
 import com.lfcreative.lfscan.data.repository.InventoryRepository
 import com.lfcreative.lfscan.session.SessionDataStore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,11 +26,14 @@ sealed class PinUiState {
 @HiltViewModel
 class PinViewModel @Inject constructor(
     private val repository: InventoryRepository,
+    private val offlineRepository: OfflineRepository,
     private val sessionDataStore: SessionDataStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<PinUiState>(PinUiState.Idle)
     val uiState: StateFlow<PinUiState> = _uiState.asStateFlow()
+
+    val isOnline: StateFlow<Boolean> = offlineRepository.isOnline
 
     // Used by ContinueSessionScreen to show who was last signed in, without needing its own ViewModel.
     val currentMember = sessionDataStore.currentMember
@@ -44,13 +48,14 @@ class PinViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = PinUiState.Loading
             try {
-                val member = repository.getTeamMemberByPin(id)
+                val member = offlineRepository.getTeamMemberByPin(id)
                 when {
                     member == null -> _uiState.value = PinUiState.InvalidId
                     member.password.isNullOrBlank() -> {
                         pendingMember = null
                         sessionDataStore.saveSession(member)
                         _uiState.value = PinUiState.Success
+                        viewModelScope.launch { offlineRepository.prefetchAndCache() }
                     }
                     else -> {
                         pendingMember = member
@@ -69,11 +74,12 @@ class PinViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = PinUiState.Loading
             try {
-                val match = repository.getTeamMemberByPinAndPassword(member.pin, password)
+                val match = offlineRepository.getTeamMemberByPinAndPassword(member.pin, password)
                 if (match != null) {
                     pendingMember = null
                     sessionDataStore.saveSession(match)
                     _uiState.value = PinUiState.Success
+                    viewModelScope.launch { offlineRepository.prefetchAndCache() }
                 } else {
                     _uiState.value = PinUiState.InvalidPassword
                 }

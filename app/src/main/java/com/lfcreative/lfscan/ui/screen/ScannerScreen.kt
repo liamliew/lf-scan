@@ -8,13 +8,19 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,7 +43,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -46,6 +51,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -81,14 +88,18 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -102,7 +113,10 @@ import com.lfcreative.lfscan.ui.theme.Amber
 import com.lfcreative.lfscan.ui.theme.Blue
 import com.lfcreative.lfscan.ui.theme.Green
 import com.lfcreative.lfscan.ui.theme.Grey
+import com.lfcreative.lfscan.ui.theme.LocalExtendedColors
 import com.lfcreative.lfscan.ui.theme.Purple
+import com.lfcreative.lfscan.ui.theme.PurpleLight
+import com.lfcreative.lfscan.ui.theme.Red
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -119,13 +133,18 @@ fun ScannerScreen(
     onBack: () -> Unit,
     onCommitSuccess: (Int) -> Unit,
     onNavigateToAsset: (String) -> Unit,
-    locationId: String? = null,
+    // Bulk Check-In / Bulk Check-Out only: advances to the location-scan / return-date step
+    // instead of committing directly. Ignored (never called) by every other mode.
+    onAdvance: () -> Unit = {},
     settingsViewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
     val currentMember by viewModel.currentMember.collectAsState(initial = null)
     val pendingContainerConfirmation by viewModel.pendingContainerConfirmation.collectAsState()
+    val isOnline by viewModel.isOnline.collectAsState()
+    val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
 
     // Total physically-scanned count: each top-level item (asset, container, or unknown) counts
     // as 1, plus every asset staged into an expanded container this session — a container scan
@@ -203,7 +222,9 @@ fun ScannerScreen(
                 if (scannerType == "internal") {
                     dataWedgeManager.stopScan()
                     dataWedgeManager.resetScanMode()
-                    dataWedgeManager.suspendScanner()
+                    // Deliberately NOT calling suspendScanner() here — the internal scanner plugin
+                    // stays resumed permanently (see MainActivity.onCreate) so the hardware trigger
+                    // keeps working everywhere in the app, not just inside a scan screen.
                     dataWedgeManager.unregisterForScannerStatus()
                 }
                 MainActivity.isScannerScreenActive = false
@@ -226,9 +247,8 @@ fun ScannerScreen(
 
     LaunchedEffect(Unit) {
         viewModel.setModeAndScannerType(mode, scannerType)
-        if (mode == "check_in" && locationId != null) viewModel.setLocation(locationId)
         if (scannerType == "camera") cameraPermLauncher.launch(Manifest.permission.CAMERA)
-        // Requested for every mode now, not just Update — Check In/Out/Mark Lost/Rent Out use it
+        // Requested for every mode now, not just Update — Check In/Out/Mark Lost use it
         // for a silent one-shot GPS snapshot (see captureGpsSnapshot below) rather than the
         // visible, continuously-tracked location Update mode shows in its status bar.
         locationPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -283,6 +303,9 @@ fun ScannerScreen(
     LaunchedEffect(state.flash) {
         when (state.flash) {
             ScanFlash.FOUND -> {
+                if (scannerType == "internal") {
+                    dataWedgeManager.stopScan()
+                }
                 launch(Dispatchers.Default) { vibrationManager.goodScan() }
                 launch(Dispatchers.Default) { SoundManager.playGoodScan() }
                 flashColor = Color(0x9900C853)
@@ -374,14 +397,14 @@ fun ScannerScreen(
                     state.commitError?.let { err ->
                         Text(
                             err,
-                            color = Color(0xFFEF4444),
+                            color = LocalExtendedColors.current.red,
                             fontSize = 13.sp,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                         )
                     }
 
-                    // Compact status bar — check_in, check_out, update, rent_out
-                    if (mode == "check_in" || mode == "check_out" || mode == "update" || mode == "rent_out") {
+                    // Compact status bar — check_in, check_out, update
+                    if (mode == "check_in" || mode == "check_out" || mode == "update") {
                         ScannerStatusBar(
                             mode = mode,
                             scannerType = scannerType,
@@ -391,15 +414,38 @@ fun ScannerScreen(
                             invalidCount = state.scannedItems.count { it.isUnknown },
                             scannerStatus = scannerStatus,
                             scanMode = scanMode,
-                            lastScannedData = lastScannedData
+                            lastScannedData = lastScannedData,
+                            isOnline = isOnline,
+                            pendingSyncCount = pendingSyncCount,
+                            onOfflineChipClick = {
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        "Working offline. $pendingSyncCount operation" +
+                                            "${if (pendingSyncCount != 1) "s" else ""} pending sync."
+                                    )
+                                }
+                            }
                         )
                     }
 
+                    val isDark = isSystemInDarkTheme()
+                    val commitContentColor = if (isDark && mode == "update") Color(0xFF121212) else Color.White
+
+                    // Bulk Check-In / Bulk Check-Out have an interstitial step (location scan /
+                    // return-date picker) between scanning and the actual commit — the button
+                    // advances there instead of committing directly. Every other mode keeps the
+                    // original immediate-commit behavior.
+                    val hasInterstitialStep = mode == "check_in" || mode == "check_out"
                     Button(
                         onClick = {
-                            currentMember?.let { member ->
-                                viewModel.commitSession(mode, member) { count ->
-                                    onCommitSuccess(count)
+                            if (hasInterstitialStep) {
+                                onAdvance()
+                            } else {
+                                currentMember?.let { member ->
+                                    SoundManager.playSuccessCommit(context)
+                                    viewModel.commitSession(mode, member) { count ->
+                                        onCommitSuccess(count)
+                                    }
                                 }
                             }
                         },
@@ -407,18 +453,31 @@ fun ScannerScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = modeAccent)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = modeAccent,
+                            contentColor = commitContentColor,
+                            disabledContainerColor = if (isDark) Color(0xFF2A2A2E) else Color(0xFFE5E7EB),
+                            disabledContentColor = if (isDark) Color(0xFF8E8E93) else Color(0xFF9CA3AF)
+                        )
                     ) {
                         if (state.isCommitting) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
-                                color = Color.White,
+                                color = commitContentColor,
                                 strokeWidth = 2.dp
                             )
                         } else {
+                            val itemCount = state.scannedItems.size
+                            val label = if (hasInterstitialStep) {
+                                "Next — $itemCount item${if (itemCount != 1) "s" else ""}"
+                            } else {
+                                "Commit $itemCount item${if (itemCount != 1) "s" else ""}"
+                            }
                             Text(
-                                "Commit ${state.scannedItems.size} item${if (state.scannedItems.size != 1) "s" else ""}",
-                                fontWeight = FontWeight.SemiBold
+                                label,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = if (state.scannedItems.isNotEmpty() && !state.isCommitting) commitContentColor else Color.Unspecified
                             )
                         }
                     }
@@ -473,7 +532,7 @@ fun ScannerScreen(
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
                             "Scan a barcode to get started",
-                            color = Color(0xFF9CA3AF),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 14.sp
                         )
                     }
@@ -497,7 +556,7 @@ fun ScannerScreen(
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         itemsIndexed(state.scannedItems, key = { _, item -> item.rawCode }) { index, item ->
-                            val supportsExpansion = (mode == "check_out" || mode == "update" || mode == "rent_out") && item.container != null
+                            val supportsExpansion = (mode == "check_out" || mode == "update") && item.container != null
                             ScannedItemCard(
                                 item = item,
                                 isNewest = index == 0,
@@ -547,12 +606,13 @@ fun ScannerScreen(
             }
         )
     }
+
 }
 
 // ── Top zone composables ────────────────────────────────────────────────────
 
 @Composable
-private fun CameraTopZone(
+internal fun CameraTopZone(
     hasCameraPermission: Boolean,
     flashColor: Color?,
     torchEnabled: Boolean,
@@ -570,7 +630,7 @@ private fun CameraTopZone(
             Box(
                 modifier = Modifier
                     .size(240.dp, 140.dp)
-                    .border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                    .border(2.dp, Color.White, RoundedCornerShape(0.dp))
             )
         }
         // Manual torch toggle — top-right corner of the preview, inside preview bounds
@@ -585,7 +645,7 @@ private fun CameraTopZone(
                 modifier = Modifier
                     .background(
                         color = Color.Black.copy(alpha = 0.4f),
-                        shape = CircleShape
+                        shape = RoundedCornerShape(0.dp)
                     )
                     .padding(8.dp)
             ) {
@@ -640,8 +700,8 @@ internal fun CounterTopZone(
         Box(
             modifier = Modifier
                 .size(180.dp)
-                .clip(CircleShape)
-                .border(4.dp, modeAccent.copy(alpha = borderAlpha), CircleShape)
+                .clip(RoundedCornerShape(0.dp))
+                .border(4.dp, modeAccent.copy(alpha = borderAlpha), RoundedCornerShape(0.dp))
                 .background(MaterialTheme.colorScheme.surface)
                 .then(
                     if (isTrigger) {
@@ -712,7 +772,7 @@ internal fun CounterTopZone(
 }
 
 @Composable
-private fun ManualEntryRow(onSubmit: (String) -> Unit) {
+internal fun ManualEntryRow(onSubmit: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
 
     Row(
@@ -764,20 +824,20 @@ private fun ScannedItemCard(
 ) {
     val unknown = item.isUnknown
     val isContainer = item.container != null
+    val extendedColors = LocalExtendedColors.current
     val leftBarColor = when {
-        isContainer -> Color(0xFF3B82F6)
-        unknown     -> Color(0xFFef4444)
+        isContainer -> extendedColors.blue
+        unknown     -> extendedColors.red
         else -> when (item.asset?.status) {
-            "available"    -> Color(0xFF4ade80)
-            "checked_out"  -> Color(0xFFf59e0b)
-            "lost"         -> Color(0xFFef4444)
-            "repair"       -> Color(0xFF9ca3af)
-            else           -> Color(0xFF9ca3af)
+            "available"    -> extendedColors.green
+            "checked_out"  -> extendedColors.amber
+            "lost"         -> extendedColors.red
+            "repair"       -> extendedColors.grey
+            else           -> extendedColors.grey
         }
     }
-    val displayId = item.rawCode.let { if (it.length > 4) it.take(4) + ".." else it }
     val cardBorder = if (unknown)
-        BorderStroke(1.5.dp, Color(0xFFef4444))
+        BorderStroke(1.5.dp, extendedColors.red)
     else
         BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
 
@@ -785,7 +845,7 @@ private fun ScannedItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize(),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(0.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = cardBorder,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -808,11 +868,15 @@ private fun ScannedItemCard(
 
                 // ID (monospace, large, bold)
                 Text(
-                    displayId,
-                    fontFamily = FontFamily.Monospace,
+                    item.rawCode,
+                    fontFamily = com.lfcreative.lfscan.ui.theme.AppMonospaceFontFamily,
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
-                    modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 12.dp, bottom = 12.dp)
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .widthIn(max = 110.dp)
+                        .padding(start = 10.dp, end = 6.dp, top = 12.dp, bottom = 12.dp)
                 )
 
                 // Name + type / unknown label / container summary
@@ -826,7 +890,7 @@ private fun ScannedItemCard(
                             Icon(
                                 Icons.Default.Inventory2,
                                 contentDescription = null,
-                                tint = Color(0xFF3B82F6),
+                                tint = extendedColors.blue,
                                 modifier = Modifier.size(14.dp)
                             )
                             Spacer(Modifier.width(4.dp))
@@ -850,7 +914,7 @@ private fun ScannedItemCard(
                             if (unknown) "Unknown Item" else item.asset?.name ?: "",
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp,
-                            color = if (unknown) Color(0xFFef4444) else Color.Unspecified,
+                            color = if (unknown) extendedColors.red else Color.Unspecified,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -865,7 +929,9 @@ private fun ScannedItemCard(
 
                 // Expand/collapse chevron — containers only, check_out/update modes only
                 if (onToggleExpand != null) {
-                    IconButton(onClick = onToggleExpand, modifier = Modifier.size(40.dp)) {
+                    // 48dp — WCAG 2.5.5 / Material's minimum touch target, even though the glyph
+                    // itself is smaller.
+                    IconButton(onClick = onToggleExpand, modifier = Modifier.size(48.dp)) {
                         Icon(
                             if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                             contentDescription = if (isExpanded) "Minimize" else "Expand",
@@ -875,7 +941,7 @@ private fun ScannedItemCard(
                 }
 
                 // Remove button
-                IconButton(onClick = onRemove, modifier = Modifier.size(40.dp)) {
+                IconButton(onClick = onRemove, modifier = Modifier.size(48.dp)) {
                     Icon(
                         Icons.Default.Close,
                         contentDescription = "Remove",
@@ -951,7 +1017,7 @@ private fun ExpandedContainerContents(
                 )
                 IconButton(
                     onClick = { onRemovePending(asset.assetId) },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         Icons.Default.Close,
@@ -1038,7 +1104,7 @@ private fun LastLocationValue(asset: Asset?) {
             Icon(
                 Icons.Default.LocationOn,
                 contentDescription = "Open in maps",
-                tint = Color(0xFF22C55E),
+                tint = LocalExtendedColors.current.green,
                 modifier = Modifier.size(12.dp)
             )
             Spacer(Modifier.width(2.dp))
@@ -1055,10 +1121,12 @@ private fun LastLocationValue(asset: Asset?) {
 
 @Composable
 private fun CostTierBadge(cost: String?) {
+    // Solid fill with white text — fixed accent constants, not LocalExtendedColors (theme-swapped
+    // tokens go too bright in dark mode to host white text at this contrast; see StatusBanner).
     val (label, color) = when (cost) {
-        "Low"  -> "L" to Color(0xFF4ade80)
-        "Med"  -> "M" to Color(0xFFf59e0b)
-        "High" -> "H" to Color(0xFFef4444)
+        "Low"  -> "L" to Green
+        "Med"  -> "M" to Amber
+        "High" -> "H" to Red
         else   -> null
     } ?: (null to null)
 
@@ -1066,7 +1134,7 @@ private fun CostTierBadge(cost: String?) {
         Box(
             modifier = Modifier
                 .size(22.dp)
-                .clip(CircleShape)
+                .clip(RoundedCornerShape(0.dp))
                 .background(color),
             contentAlignment = Alignment.Center
         ) {
@@ -1107,8 +1175,12 @@ private fun ScannerStatusBar(
     invalidCount: Int,
     scannerStatus: String,
     scanMode: String,
-    lastScannedData: String
+    lastScannedData: String,
+    isOnline: Boolean,
+    pendingSyncCount: Int,
+    onOfflineChipClick: () -> Unit
 ) {
+    val extendedColors = LocalExtendedColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1118,6 +1190,15 @@ private fun ScannerStatusBar(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Leftmost — connectivity/sync state, only shown when there's something to say
+        if (!isOnline) {
+            OfflineChip(pendingSyncCount = pendingSyncCount, onClick = onOfflineChipClick)
+            StatusBarDivider()
+        } else if (pendingSyncCount > 0) {
+            SyncingChip()
+            StatusBarDivider()
+        }
+
         // Left section — INTERNAL scanner mode only
         if (scannerType == "internal") {
             ScannerStatusDot(scannerStatus)
@@ -1129,9 +1210,9 @@ private fun ScannerStatusBar(
         // GPS status — update mode only
         if (mode == "update") {
             val (gpsLabel, gpsColor) = when {
-                gpsError -> "Error" to Color(0xFFEF4444)
-                gpsLat != null -> "OK" to Color(0xFF22C55E)
-                else -> "Fetching" to Color(0xFF9CA3AF)
+                gpsError -> "Error" to extendedColors.red
+                gpsLat != null -> "OK" to extendedColors.green
+                else -> "Fetching" to extendedColors.grey
             }
             Row(
                 modifier = Modifier.widthIn(min = 64.dp),
@@ -1158,7 +1239,7 @@ private fun ScannerStatusBar(
                 Icons.Default.CheckCircle,
                 contentDescription = "Valid items",
                 modifier = Modifier.size(12.dp),
-                tint = Color(0xFF22C55E)
+                tint = extendedColors.green
             )
             Spacer(Modifier.width(4.dp))
             Text(validCount.toString(), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
@@ -1173,11 +1254,61 @@ private fun ScannerStatusBar(
                 Icons.Default.Cancel,
                 contentDescription = "Invalid items",
                 modifier = Modifier.size(12.dp),
-                tint = Color(0xFFEF4444)
+                tint = extendedColors.red
             )
             Spacer(Modifier.width(4.dp))
             Text(invalidCount.toString(), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
         }
+    }
+}
+
+@Composable
+private fun OfflineChip(pendingSyncCount: Int, onClick: () -> Unit) {
+    val amber = LocalExtendedColors.current.amber
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(0.dp))
+            .background(amber.copy(alpha = 0.18f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.CloudOff,
+            contentDescription = "Offline — $pendingSyncCount pending",
+            tint = amber,
+            modifier = Modifier.size(12.dp)
+        )
+        Spacer(Modifier.width(4.dp))
+        Text("Offline", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = amber)
+    }
+}
+
+@Composable
+private fun SyncingChip() {
+    val blue = LocalExtendedColors.current.blue
+    val transition = rememberInfiniteTransition(label = "syncSpin")
+    val angle by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+        label = "syncSpinAngle"
+    )
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(0.dp))
+            .background(blue.copy(alpha = 0.18f))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.Sync,
+            contentDescription = "Syncing",
+            tint = blue,
+            modifier = Modifier.size(12.dp).rotate(angle)
+        )
+        Spacer(Modifier.width(4.dp))
+        Text("Syncing…", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = blue)
     }
 }
 
@@ -1193,37 +1324,57 @@ private fun StatusBarDivider() {
 
 @Composable
 private fun ScannerStatusDot(status: String) {
+    val extendedColors = LocalExtendedColors.current
     val color = when (status) {
-        "WAITING", "SCANNING" -> Color(0xFF4ade80)
-        "IDLE" -> Color(0xFFf59e0b)
-        else -> Color(0xFFef4444) // DISABLED, ERROR, UNKNOWN
+        "WAITING", "SCANNING" -> extendedColors.green
+        "IDLE" -> extendedColors.amber
+        else -> extendedColors.red // DISABLED, ERROR, UNKNOWN
+    }
+    // Color is the only visual cue here (no room for a text label in this compact bar) — a
+    // semantics description at least gives screen-reader users the same information (WCAG 1.4.1
+    // / 4.1.2). Sighted colorblind users are still underserved by this one; a real fix would need
+    // a shape/icon change too.
+    val description = when (status) {
+        "WAITING", "SCANNING" -> "Scanner ready"
+        "IDLE" -> "Scanner idle"
+        else -> "Scanner error"
     }
     Box(
         modifier = Modifier
             .size(10.dp)
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(0.dp))
             .background(color)
+            .semantics { contentDescription = description }
     )
 }
 
 @Composable
 internal fun ScanModeBadge(mode: String) {
+    // Solid fill with white text — fixed accent constants, not LocalExtendedColors (see
+    // StatusBanner for why).
     val color = when (mode) {
-        "1D" -> Color(0xFF3b82f6)
-        "2D" -> Color(0xFF4ade80)
-        "BULK" -> Color(0xFFf59e0b)
-        "MULTI" -> Color(0xFFa855f7)
-        else -> Color(0xFF9CA3AF)
+        "1D" -> Blue
+        "2D" -> Green
+        "BULK" -> Amber
+        "MULTI" -> Purple
+        else -> Grey
     }
     Box(
         modifier = Modifier
-            .widthIn(min = 40.dp)
-            .clip(RoundedCornerShape(percent = 50))
+            .widthIn(min = 56.dp)
+            .clip(RoundedCornerShape(0.dp))
             .background(color)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .padding(horizontal = 10.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(mode, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text(
+            text = mode,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }
 
@@ -1233,7 +1384,7 @@ private fun LastScannedDataBox(data: String) {
         modifier = Modifier
             .width(96.dp)
             .height(20.dp)
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(0.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 6.dp),
@@ -1241,7 +1392,7 @@ private fun LastScannedDataBox(data: String) {
     ) {
         Text(
             data.ifEmpty { "—" },
-            fontFamily = FontFamily.Monospace,
+            fontFamily = com.lfcreative.lfscan.ui.theme.AppMonospaceFontFamily,
             fontSize = 10.sp,
             maxLines = 1,
             softWrap = false
@@ -1257,7 +1408,7 @@ internal val SCAN_MODE_OPTIONS = listOf(
     ScanModeOption("1D", "Linear barcodes only, faster decode"),
     ScanModeOption("2D", "QR, DataMatrix, PDF417, Aztec only"),
     ScanModeOption("BULK", "All decoders, continuous scanning after each decode"),
-    ScanModeOption("MULTI", "Multiple barcodes per trigger press")
+    ScanModeOption("MULTI", "All 1D & 2D decoders, turns off after valid scan")
 )
 
 @Composable
@@ -1265,7 +1416,12 @@ internal fun ScanModeButton(currentMode: String, onModeSelected: (String) -> Uni
     var expanded by remember { mutableStateOf(false) }
 
     Box {
-        IconButton(onClick = { expanded = true }) {
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 4.dp, vertical = 6.dp)
+                .clip(RoundedCornerShape(0.dp))
+                .clickable { expanded = true }
+        ) {
             ScanModeBadge(currentMode)
         }
         DropdownMenu(
@@ -1306,19 +1462,23 @@ internal fun ScanModeButton(currentMode: String, onModeSelected: (String) -> Uni
 
 // ── Mode helpers (used by ScannerTypeSelectScreen too) ─────────────────────
 
-fun modeColor(mode: String) = when (mode) {
-    "check_out" -> Blue
-    "check_in"  -> Green
-    "update"    -> Purple
-    "rent_out"  -> Amber
-    else        -> Grey
+@Composable
+fun modeColor(mode: String): Color {
+    val isDark = isSystemInDarkTheme()
+    return when (mode) {
+        "check_out" -> Blue
+        "check_in"  -> Green
+        "check_in_repeat" -> Green
+        "update"    -> if (isDark) PurpleLight else Purple
+        else        -> Grey
+    }
 }
 
 fun modeTitle(mode: String) = when (mode) {
-    "check_out" -> "Check Out"
-    "check_in"  -> "Check In"
+    "check_out" -> "Bulk Check-Out"
+    "check_in"  -> "Bulk Check-In"
+    "check_in_repeat" -> "Check-In"
     "update"    -> "Update"
-    "rent_out"  -> "Rent Out"
     else        -> "Inquiry"
 }
 

@@ -9,6 +9,7 @@ import com.lfcreative.lfscan.data.model.InventoryEvent
 import com.lfcreative.lfscan.data.model.InventoryEventInsert
 import com.lfcreative.lfscan.data.model.Location
 import com.lfcreative.lfscan.data.model.TeamMember
+import com.lfcreative.lfscan.data.offline.OfflineRepository
 import com.lfcreative.lfscan.data.repository.InventoryRepository
 import com.lfcreative.lfscan.session.SessionDataStore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,6 +25,7 @@ import javax.inject.Inject
 @HiltViewModel
 class AssetDetailViewModel @Inject constructor(
     private val repository: InventoryRepository,
+    private val offlineRepository: OfflineRepository,
     sessionDataStore: SessionDataStore,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -41,6 +43,7 @@ class AssetDetailViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     private val _isEditing = MutableStateFlow(false)
     private val _isSaving = MutableStateFlow(false)
+    private val _isRenamingId = MutableStateFlow(false)
     private val _error = MutableStateFlow<String?>(null)
     private val _snackbarMessage = MutableSharedFlow<String>(extraBufferCapacity = 4)
 
@@ -53,6 +56,7 @@ class AssetDetailViewModel @Inject constructor(
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
     val isEditing: StateFlow<Boolean> = _isEditing.asStateFlow()
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
+    val isRenamingId: StateFlow<Boolean> = _isRenamingId.asStateFlow()
     val error: StateFlow<String?> = _error.asStateFlow()
     val snackbarMessage: SharedFlow<String> = _snackbarMessage.asSharedFlow()
 
@@ -65,10 +69,10 @@ class AssetDetailViewModel @Inject constructor(
             _isLoading.value = true
             _error.value = null
             try {
-                val asset = repository.getAssetByCode(assetId)
+                val asset = offlineRepository.getAssetByCode(assetId)
                 _asset.value = asset
 
-                val allLocations = repository.getLocations()
+                val allLocations = offlineRepository.getLocations()
                 _locations.value = allLocations
                 _locationMap.value = allLocations.associate { it.id to it.name }
 
@@ -78,9 +82,13 @@ class AssetDetailViewModel @Inject constructor(
                     _location.value = null
                 }
 
-                _container.value = asset?.containerId?.let { repository.getContainerById(it)?.container }
+                _container.value = asset?.containerId?.let { offlineRepository.getContainerById(it)?.container }
 
-                _events.value = repository.getEventsByAssetId(assetId)
+                try {
+                    _events.value = repository.getEventsByAssetId(assetId)
+                } catch (_: Exception) {
+                    _events.value = emptyList()
+                }
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to load asset"
             } finally {
@@ -102,7 +110,7 @@ class AssetDetailViewModel @Inject constructor(
         val containerId = currentAsset.containerId ?: return
         viewModelScope.launch {
             try {
-                repository.removeAssetFromContainer(
+                offlineRepository.removeAssetFromContainer(
                     assetId = currentAsset.assetId,
                     containerId = containerId,
                     performedBy = performedBy,
@@ -137,6 +145,29 @@ class AssetDetailViewModel @Inject constructor(
                 _error.value = e.message ?: "Save failed"
             } finally {
                 _isSaving.value = false
+            }
+        }
+    }
+
+    // Addendum — a container's asset code and a plain asset's code are the same concept (a
+    // container is always also an asset), so this one entry point covers both. Doesn't reload
+    // `this` instance afterward: assetId (above) is fixed for the lifetime of this ViewModel
+    // (SavedStateHandle-backed, per this screen's "load fresh by id" convention), so the caller is
+    // expected to navigate to the renamed asset's OWN detail route on success — a fresh ViewModel
+    // instance then loads it normally. Every FK into inventory_assets(asset_id) has ON UPDATE
+    // CASCADE (see the add_on_update_cascade_for_asset_id_fks migration), so the single repository
+    // call is enough — no follow-up writes needed here for events/linked locations/etc.
+    fun renameAssetId(newId: String, onSuccess: (String) -> Unit, onError: (String) -> Unit) {
+        val current = _asset.value ?: return
+        viewModelScope.launch {
+            _isRenamingId.value = true
+            try {
+                repository.renameAssetId(current.assetId, newId)
+                onSuccess(newId.trim())
+            } catch (e: Exception) {
+                onError(e.message ?: "Failed to change ID")
+            } finally {
+                _isRenamingId.value = false
             }
         }
     }

@@ -49,6 +49,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.AlertDialog
@@ -66,6 +67,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -88,6 +90,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import com.lfcreative.lfscan.ui.theme.LocalExtendedColors
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -129,6 +132,7 @@ fun PinScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     val uiState by viewModel.uiState.collectAsState()
+    val isOnline by viewModel.isOnline.collectAsState()
     // Step 1 = ID entry, Step 2 = password entry (skipped entirely if the member has no password)
     var step by remember { mutableStateOf(1) }
     var id by remember { mutableStateOf("") }
@@ -362,6 +366,7 @@ fun PinScreen(
                         ) { targetStep ->
                             if (targetStep == 1) {
                                 IdStepContent(
+                                    isOnline = isOnline,
                                     id = id,
                                     showError = showError,
                                     errorText = errorText,
@@ -396,6 +401,7 @@ fun PinScreen(
                                 )
                             } else {
                                 PasswordStepContent(
+                                    isOnline = isOnline,
                                     memberName = memberName,
                                     password = password,
                                     showError = showError,
@@ -444,6 +450,7 @@ fun PinScreen(
 
 @Composable
 private fun IdStepContent(
+    isOnline: Boolean,
     id: String,
     showError: Boolean,
     errorText: String,
@@ -461,9 +468,35 @@ private fun IdStepContent(
         modifier = Modifier.padding(24.dp)
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("LF Scan", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Text("LFC Asset Services", fontSize = 28.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Text("Enter your ID", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!isOnline) {
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    color = LocalExtendedColors.current.amber.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(0.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = LocalExtendedColors.current.amber
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Offline Mode Enabled",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = LocalExtendedColors.current.amber
+                        )
+                    }
+                }
+            }
         }
 
         // 4-cell ID display
@@ -480,7 +513,7 @@ private fun IdStepContent(
                         .border(
                             width = 2.dp,
                             color = when {
-                                showError -> Color(0xFFEF4444)
+                                showError -> LocalExtendedColors.current.red
                                 index < id.length -> MaterialTheme.colorScheme.onSurface
                                 else -> MaterialTheme.colorScheme.outline
                             },
@@ -501,7 +534,7 @@ private fun IdStepContent(
         }
 
         if (showError) {
-            Text(errorText, color = Color(0xFFEF4444), fontSize = 14.sp)
+            Text(errorText, color = LocalExtendedColors.current.red, fontSize = 14.sp)
         } else {
             Spacer(Modifier.height(20.dp))
         }
@@ -545,6 +578,7 @@ private fun IdStepContent(
 
 @Composable
 private fun PasswordStepContent(
+    isOnline: Boolean,
     memberName: String,
     password: String,
     showError: Boolean,
@@ -564,6 +598,32 @@ private fun PasswordStepContent(
             Text("Welcome, $memberName", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
             Text("Enter your password", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!isOnline) {
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    color = LocalExtendedColors.current.amber.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(0.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = LocalExtendedColors.current.amber
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Offline Mode Enabled",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = LocalExtendedColors.current.amber
+                        )
+                    }
+                }
+            }
         }
 
         OutlinedTextField(
@@ -581,7 +641,7 @@ private fun PasswordStepContent(
         )
 
         if (showError) {
-            Text(errorText, color = Color(0xFFEF4444), fontSize = 14.sp)
+            Text(errorText, color = LocalExtendedColors.current.red, fontSize = 14.sp)
         } else {
             Spacer(Modifier.height(20.dp))
         }
@@ -648,7 +708,7 @@ private fun LoginBarcodeScanner(
                     Box(
                         modifier = Modifier
                             .size(240.dp, 140.dp)
-                            .border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                            .border(2.dp, Color.White, RoundedCornerShape(0.dp))
                     )
                 }
             } else {
@@ -896,7 +956,7 @@ private fun PinKey(
         else -> FilledTonalButton(
             onClick = { onDigit(key) },
             modifier = Modifier.size(keySize),
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(0.dp),
             contentPadding = PaddingValues(0.dp)
         ) {
             Text(key, fontSize = 22.sp, fontWeight = FontWeight.Medium)

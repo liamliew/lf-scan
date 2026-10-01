@@ -21,10 +21,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
@@ -65,6 +65,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import com.lfcreative.lfscan.ui.theme.Amber
+import com.lfcreative.lfscan.ui.theme.Green
+import com.lfcreative.lfscan.ui.theme.Grey
+import com.lfcreative.lfscan.ui.theme.LocalExtendedColors
+import com.lfcreative.lfscan.ui.theme.Purple
+import com.lfcreative.lfscan.ui.theme.Red
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -78,15 +84,21 @@ import com.lfcreative.lfscan.data.model.Asset
 import com.lfcreative.lfscan.data.model.Container
 import com.lfcreative.lfscan.data.model.InventoryEvent
 import com.lfcreative.lfscan.data.model.Location
+import com.lfcreative.lfscan.data.model.LocationHierarchy
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+// Addendum — a container's asset code and a plain asset's code are the same concept here (a
+// container is always also an asset), so Edit ID (below) covers both with one flow.
+private enum class EditIdStep { INPUT, CONFIRM }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssetDetailScreen(
     onBack: () -> Unit,
     showCreatedMessage: Boolean = false,
+    onRenamed: (newAssetId: String) -> Unit = {},
     viewModel: AssetDetailViewModel = hiltViewModel()
 ) {
     val asset by viewModel.asset.collectAsState()
@@ -98,9 +110,14 @@ fun AssetDetailScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isEditing by viewModel.isEditing.collectAsState()
     val isSaving by viewModel.isSaving.collectAsState()
+    val isRenamingId by viewModel.isRenamingId.collectAsState()
     val currentMember by viewModel.currentMember.collectAsState(initial = null)
 
     var showRemoveFromContainerDialog by remember { mutableStateOf(false) }
+    var showEditIdDialog by remember { mutableStateOf(false) }
+    var editIdStep by remember { mutableStateOf(EditIdStep.INPUT) }
+    var newIdInput by remember { mutableStateOf("") }
+    var editIdError by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -140,7 +157,7 @@ fun AssetDetailScreen(
                 title = {
                     Text(
                         asset?.assetId ?: "Loading…",
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = com.lfcreative.lfscan.ui.theme.AppMonospaceFontFamily,
                         fontWeight = FontWeight.SemiBold
                     )
                 },
@@ -151,6 +168,17 @@ fun AssetDetailScreen(
                 },
                 actions = {
                     if (asset != null) {
+                        IconButton(
+                            onClick = {
+                                newIdInput = asset?.assetId ?: ""
+                                editIdError = null
+                                editIdStep = EditIdStep.INPUT
+                                showEditIdDialog = true
+                            },
+                            enabled = !isEditing && !isRenamingId
+                        ) {
+                            Icon(Icons.Default.Badge, contentDescription = "Edit ID")
+                        }
                         IconButton(
                             onClick = { viewModel.toggleEdit() },
                             enabled = isEditing || asset?.containerLocked != true
@@ -314,10 +342,133 @@ fun AssetDetailScreen(
                 TextButton(onClick = {
                     showRemoveFromContainerDialog = false
                     currentMember?.let { viewModel.removeFromContainer(it) }
-                }) { Text("Remove", color = Color(0xFFEF4444)) }
+                }) { Text("Remove", color = LocalExtendedColors.current.red) }
             },
             dismissButton = {
                 TextButton(onClick = { showRemoveFromContainerDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showEditIdDialog) {
+        EditAssetIdDialog(
+            step = editIdStep,
+            currentId = asset?.assetId ?: "",
+            newId = newIdInput,
+            onNewIdChange = { newIdInput = it; editIdError = null },
+            error = editIdError,
+            isSaving = isRenamingId,
+            onDismiss = { showEditIdDialog = false },
+            onContinue = {
+                val trimmed = newIdInput.trim()
+                when {
+                    trimmed.isBlank() -> editIdError = "ID can't be blank"
+                    trimmed == asset?.assetId -> editIdError = "Enter a different ID"
+                    else -> {
+                        editIdError = null
+                        editIdStep = EditIdStep.CONFIRM
+                    }
+                }
+            },
+            onBack = { editIdStep = EditIdStep.INPUT },
+            onConfirm = {
+                viewModel.renameAssetId(
+                    newId = newIdInput.trim(),
+                    onSuccess = { newId ->
+                        showEditIdDialog = false
+                        onRenamed(newId)
+                    },
+                    onError = { message ->
+                        editIdError = message
+                        editIdStep = EditIdStep.INPUT
+                    }
+                )
+            }
+        )
+    }
+}
+
+// ── Edit ID dialog ───────────────────────────────────────────────────────────
+// Two steps in one AlertDialog-based flow (matching this screen's existing dialog pattern, not a
+// new one): INPUT collects + validates the new id, CONFIRM makes the consequence explicit before
+// committing — any physical label already printed with the old code won't match afterward.
+@Composable
+private fun EditAssetIdDialog(
+    step: EditIdStep,
+    currentId: String,
+    newId: String,
+    onNewIdChange: (String) -> Unit,
+    error: String?,
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onContinue: () -> Unit,
+    onBack: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    when (step) {
+        EditIdStep.INPUT -> AlertDialog(
+            onDismissRequest = { if (!isSaving) onDismiss() },
+            title = { Text("Edit ID") },
+            text = {
+                Column {
+                    Text(
+                        "Current ID: $currentId",
+                        fontFamily = com.lfcreative.lfscan.ui.theme.AppMonospaceFontFamily,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = newId,
+                        onValueChange = onNewIdChange,
+                        label = { Text("New ID") },
+                        singleLine = true,
+                        isError = error != null,
+                        enabled = !isSaving,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    error?.let {
+                        Spacer(Modifier.height(4.dp))
+                        Text(it, fontSize = 12.sp, color = LocalExtendedColors.current.red)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onContinue, enabled = !isSaving) { Text("Continue") }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss, enabled = !isSaving) { Text("Cancel") }
+            }
+        )
+        EditIdStep.CONFIRM -> AlertDialog(
+            onDismissRequest = { if (!isSaving) onBack() },
+            title = { Text("Change this item's ID?") },
+            text = {
+                Column {
+                    Text("Change this item's ID from $currentId to $newId?", fontSize = 14.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Any printed label showing $currentId will need to be reprinted.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    error?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, fontSize = 12.sp, color = LocalExtendedColors.current.red)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onConfirm, enabled = !isSaving) {
+                    if (isSaving) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Change ID", color = LocalExtendedColors.current.red)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onBack, enabled = !isSaving) { Text("Back") }
             }
         )
     }
@@ -374,7 +525,7 @@ private fun PhotoGallery(photoUrls: List<String>) {
                         Box(
                             modifier = Modifier
                                 .size(if (pagerState.currentPage == idx) 8.dp else 6.dp)
-                                .clip(CircleShape)
+                                .clip(RoundedCornerShape(0.dp))
                                 .background(
                                     if (pagerState.currentPage == idx) Color.White
                                     else Color.White.copy(alpha = 0.5f)
@@ -392,13 +543,16 @@ private fun PhotoGallery(photoUrls: List<String>) {
 @Composable
 private fun StatusBanner(status: String, containerLocked: Boolean = false, rentalDueDate: String? = null) {
     val overdue = status == "rented" && isRentalOverdue(rentalDueDate)
+    // Solid fill with white text on top — uses the fixed (non-theme-swapped) accent constants,
+    // not LocalExtendedColors, since those are tuned for colored text/icon ON a surface and go
+    // too bright in dark theme to host white text at this contrast.
     val color = when (status) {
-        "available"   -> Color(0xFF4ade80)
-        "checked_out" -> Color(0xFFf59e0b)
-        "rented"      -> if (overdue) Color(0xFFef4444) else Color(0xFFa855f7)
-        "lost"        -> Color(0xFFef4444)
-        "repair"      -> Color(0xFF9ca3af)
-        else          -> Color(0xFF9ca3af)
+        "available"   -> Green
+        "checked_out" -> Amber
+        "rented"      -> if (overdue) Red else Purple
+        "lost"        -> Red
+        "repair"      -> Grey
+        else          -> Grey
     }
     val label = when (status) {
         "available"   -> "AVAILABLE"
@@ -446,14 +600,15 @@ private fun ContainerLockedWarning(containerCode: String, onRemoveClick: () -> U
             color = Color(0xFF92400E),
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFFEF3C7), RoundedCornerShape(8.dp))
+                .background(Color(0xFFFEF3C7), RoundedCornerShape(0.dp))
                 .padding(12.dp)
         )
         Spacer(Modifier.height(8.dp))
+        val dangerColor = LocalExtendedColors.current.red
         OutlinedButton(
             onClick = onRemoveClick,
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),
-            border = BorderStroke(1.dp, Color(0xFFEF4444)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = dangerColor),
+            border = BorderStroke(1.dp, dangerColor),
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Remove from Container")
@@ -491,7 +646,7 @@ private fun InfoGrid(asset: Asset, location: Location?, container: Container? = 
             InfoRow(
                 "Due Back",
                 formatRentalDueDate(asset.rentalDueDate) + if (overdue) " (Overdue)" else "",
-                valueColor = if (overdue) Color(0xFFef4444) else null
+                valueColor = if (overdue) LocalExtendedColors.current.red else null
             )
         }
         InfoRow("Last Seen", formatTimestamp(asset.updatedAt))
@@ -499,7 +654,7 @@ private fun InfoGrid(asset: Asset, location: Location?, container: Container? = 
 
         // Notes — full width
         Spacer(Modifier.height(4.dp))
-        Text("Notes", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Notes", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(2.dp))
         Text(
             asset.notes?.takeIf { it.isNotBlank() } ?: "—",
@@ -554,7 +709,7 @@ private fun LastKnownLocationRow(asset: Asset) {
                     Icon(
                         Icons.Default.LocationOn,
                         contentDescription = "Open in maps",
-                        tint = Color(0xFF22C55E),
+                        tint = LocalExtendedColors.current.green,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.width(4.dp))
@@ -586,6 +741,7 @@ private fun InfoRow(label: String, value: String, monospace: Boolean = false, va
         Text(
             label,
             fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(90.dp)
         )
@@ -594,7 +750,7 @@ private fun InfoRow(label: String, value: String, monospace: Boolean = false, va
             fontSize = 14.sp,
             color = valueColor ?: Color.Unspecified,
             modifier = Modifier.weight(1f),
-            fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default
+            fontFamily = if (monospace) com.lfcreative.lfscan.ui.theme.AppMonospaceFontFamily else com.lfcreative.lfscan.ui.theme.AppFontFamily
         )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
@@ -695,7 +851,8 @@ private fun EditForm(
 
         // Location dropdown
         var locationExpanded by remember { mutableStateOf(false) }
-        val selectedLocationName = locations.find { it.id == locationId }?.name ?: "No location"
+        val selectedLocationName = locations.find { it.id == locationId }
+            ?.let { LocationHierarchy.displayPath(it, locations) } ?: "No location"
         ExposedDropdownMenuBox(
             expanded = locationExpanded,
             onExpandedChange = { locationExpanded = !locationExpanded }
@@ -720,7 +877,7 @@ private fun EditForm(
                 )
                 locations.forEach { loc ->
                     DropdownMenuItem(
-                        text = { Text(loc.name) },
+                        text = { Text(LocationHierarchy.displayPath(loc, locations)) },
                         onClick = { onLocationChange(loc.id); locationExpanded = false }
                     )
                 }
@@ -739,16 +896,20 @@ private fun EditForm(
 // ── Activity Timeline ─────────────────────────────────────────────────────────
 // eventDotColor/eventDescription/formatTimestamp are also used by ActivityScreen's global feed.
 
-internal fun eventDotColor(eventType: String): Color = when (eventType) {
-    "checkin"  -> Color(0xFF4ade80)
-    "checkout" -> Color(0xFFf59e0b)
-    "location" -> Color(0xFFA855F7)
-    "lost"     -> Color(0xFFef4444)
-    "created"  -> Color(0xFF3B82F6)
-    "edited"   -> Color(0xFF9ca3af)
-    "repair"   -> Color(0xFFf97316)
-    "rented"   -> Color(0xFFa855f7)
-    else       -> Color(0xFF9ca3af)
+@Composable
+internal fun eventDotColor(eventType: String): Color {
+    val extendedColors = LocalExtendedColors.current
+    return when (eventType) {
+        "checkin"  -> extendedColors.green
+        "checkout" -> extendedColors.amber
+        "location" -> extendedColors.purple
+        "lost"     -> extendedColors.red
+        "created"  -> extendedColors.blue
+        "edited"   -> extendedColors.grey
+        "repair"   -> extendedColors.amber
+        "rented"   -> extendedColors.purple
+        else       -> extendedColors.grey
+    }
 }
 
 internal fun eventDescription(event: InventoryEvent, locationMap: Map<String, String>): String {
@@ -793,7 +954,7 @@ private fun EventRow(
             Box(
                 modifier = Modifier
                     .size(10.dp)
-                    .clip(CircleShape)
+                    .clip(RoundedCornerShape(0.dp))
                     .background(dotColor)
             )
             if (!isLast) {

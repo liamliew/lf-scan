@@ -3,7 +3,7 @@ package com.lfcreative.lfscan.ui.screen
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lfcreative.lfscan.data.model.Asset
-import com.lfcreative.lfscan.data.repository.InventoryRepository
+import com.lfcreative.lfscan.data.offline.OfflineRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -16,7 +16,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class AssetsViewModel @Inject constructor(
-    private val repository: InventoryRepository
+    private val offlineRepository: OfflineRepository
 ) : ViewModel() {
 
     private val _assets = MutableStateFlow<List<Asset>>(emptyList())
@@ -53,7 +53,7 @@ class AssetsViewModel @Inject constructor(
             _isLoading.value = true
             _error.value = null
             try {
-                _assets.value = repository.getAllAssets()
+                _assets.value = offlineRepository.getAssets()
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to load assets"
             } finally {

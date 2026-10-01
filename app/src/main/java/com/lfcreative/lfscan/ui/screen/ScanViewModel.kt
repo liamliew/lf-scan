@@ -15,9 +15,9 @@ import com.lfcreative.lfscan.MainActivity
 import com.lfcreative.lfscan.data.model.Asset
 import com.lfcreative.lfscan.data.model.ContainerWithDetails
 import com.lfcreative.lfscan.data.model.InventoryEvent
-import com.lfcreative.lfscan.data.model.InventoryEventInsert
 import com.lfcreative.lfscan.data.model.Location as LocationModel
 import com.lfcreative.lfscan.data.model.TeamMember
+import com.lfcreative.lfscan.data.offline.OfflineRepository
 import com.lfcreative.lfscan.data.repository.InventoryRepository
 import com.lfcreative.lfscan.session.SessionDataStore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -26,10 +26,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -53,6 +55,32 @@ data class PendingContainerScan(val container: ContainerWithDetails, val rawCode
 
 enum class ScanFlash { NONE, FOUND, NOT_FOUND, DUPLICATE }
 
+// Step machine for the single-item, repeating "Check-In" mode (mode key "check_in_repeat") —
+// distinct from the bulk check_in flow. Loops SCANNING_ITEM -> SCANNING_LOCATION -> auto-commit
+// -> back to SCANNING_ITEM until the user taps "Done".
+enum class RepeatCheckInStep { SCANNING_ITEM, SCANNING_LOCATION }
+
+data class RepeatCheckInPair(
+    val asset: Asset,
+    val location: LocationModel,
+    val committedAt: Long = System.currentTimeMillis(),
+    // Snapshot of the asset immediately before this check-in — carried so an undo (see
+    // revertRepeatCheckInPair) can restore exactly this, not just guess "available"/null.
+    val previousStatus: String,
+    val previousLocationId: String?,
+    val previousUserId: String?,
+    val previousUserName: String?,
+    val previousExpectedReturnDate: String?
+)
+
+// Floating-card feedback for the single-item Check-In mode (see ScanResultCard.kt) — set on
+// every item/location scan attempt, success or failure; the Composable clears it after a brief
+// delay, same timing pattern as ScannerScreen's flash-then-clearFlash().
+sealed class RepeatCheckInResult {
+    data class Success(val pair: RepeatCheckInPair) : RepeatCheckInResult()
+    data class Invalid(val message: String) : RepeatCheckInResult()
+}
+
 data class ScanUiState(
     val scannedItems: List<ScannedItem> = emptyList(),
     val committedItems: List<ScannedItem> = emptyList(),
@@ -68,20 +96,22 @@ data class ScanUiState(
     val gpsAddress: String? = null,
     val mode: String? = null,
     val scannerType: String? = null,
-    // Rental details, collected up front on RentDetailsScreen before scanning starts (rent_out
-    // mode only) — renterName doubles as the asset's current_user_name while it's rented out.
-    val renterName: String = "",
-    val renterContact: String = "",
-    val rentalDueDateMillis: Long? = null,
-    // rawCode of the container currently "expanded" (check_out/update modes only) — scanning an
-    // asset while a container is expanded stages it into that container instead of adding a new
-    // top-level item. Only one container can be expanded at a time.
-    val expandedContainerRawCode: String? = null
+    val expandedContainerRawCode: String? = null,
+    // Bulk Check-Out's "estimated return date" step.
+    val expectedReturnDateMillis: Long? = null,
+    // Resolved after a Bulk Check-In commit, purely for CommitResultScreen's summary copy.
+    val committedLocationName: String? = null,
+    // Single-item, repeating "Check-In" mode (mode key "check_in_repeat") — see RepeatCheckInStep.
+    val repeatCheckInStep: RepeatCheckInStep = RepeatCheckInStep.SCANNING_ITEM,
+    val repeatCheckInPendingAsset: Asset? = null,
+    val repeatCheckInPairs: List<RepeatCheckInPair> = emptyList(),
+    val repeatCheckInResult: RepeatCheckInResult? = null
 )
 
 @HiltViewModel
 class ScanViewModel @Inject constructor(
     private val repository: InventoryRepository,
+    private val offlineRepository: OfflineRepository,
     private val sessionDataStore: SessionDataStore,
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
@@ -97,6 +127,10 @@ class ScanViewModel @Inject constructor(
     val navigateToAsset: SharedFlow<String> = _navigateToAsset.asSharedFlow()
 
     val currentMember = sessionDataStore.currentMember
+
+    val isOnline: StateFlow<Boolean> = offlineRepository.isOnline
+    val pendingSyncCount: StateFlow<Int> = offlineRepository.pendingCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     private val _pendingContainerConfirmation = MutableStateFlow<PendingContainerScan?>(null)
     val pendingContainerConfirmation: StateFlow<PendingContainerScan?> = _pendingContainerConfirmation.asStateFlow()
@@ -146,7 +180,7 @@ class ScanViewModel @Inject constructor(
         if (trimmed.isEmpty()) return
         viewModelScope.launch {
             try {
-                val asset = repository.getAssetByCode(trimmed)
+                val asset = offlineRepository.getAssetByCode(trimmed)
                 if (asset != null) {
                     _state.value = _state.value.copy(flash = ScanFlash.FOUND)
                     _navigateToAsset.emit(asset.assetId)
@@ -161,18 +195,15 @@ class ScanViewModel @Inject constructor(
         }
     }
 
-    fun setRenterDetails(name: String, contact: String, dueDateMillis: Long) {
-        _state.value = _state.value.copy(
-            renterName = name.trim(),
-            renterContact = contact.trim(),
-            rentalDueDateMillis = dueDateMillis
-        )
+    // Bulk Check-Out's "estimated return date" step.
+    fun setExpectedReturnDate(millis: Long) {
+        _state.value = _state.value.copy(expectedReturnDateMillis = millis)
     }
 
     fun loadLocations() {
         viewModelScope.launch {
             try {
-                val locs = repository.getLocations()
+                val locs = offlineRepository.getLocations()
                 _state.value = _state.value.copy(locations = locs)
             } catch (_: Exception) {}
         }
@@ -182,13 +213,13 @@ class ScanViewModel @Inject constructor(
         val trimmed = code.trim()
         if (trimmed.isEmpty()) return
 
-        val usesContainerExpansion = _state.value.mode == "check_out" || _state.value.mode == "update" || _state.value.mode == "rent_out"
+        val usesContainerExpansion = _state.value.mode == "check_out" || _state.value.mode == "update"
         val expandedItem = _state.value.expandedContainerRawCode
             ?.let { rc -> _state.value.scannedItems.find { it.rawCode == rc && it.container != null } }
 
         viewModelScope.launch {
             try {
-                val asset = repository.getAssetByCode(trimmed)
+                val asset = offlineRepository.getAssetByCode(trimmed)
                 if (asset != null) {
                     if (usesContainerExpansion && expandedItem != null) {
                         addAssetToExpandedContainer(expandedItem, asset)
@@ -204,7 +235,7 @@ class ScanViewModel @Inject constructor(
                     return@launch
                 }
 
-                val container = repository.getContainerByCode(trimmed)
+                val container = offlineRepository.getContainerByCode(trimmed)
                 if (container != null) {
                     val existing = _state.value.scannedItems.find { it.rawCode == trimmed }
 
@@ -353,7 +384,7 @@ class ScanViewModel @Inject constructor(
             } catch (_: Exception) { null }
         }
 
-    // Silent, one-shot GPS fetch for Check In/Check Out/Update/Mark Lost/Rent Out — unlike
+    // Silent, one-shot GPS fetch for Check In/Check Out/Update/Mark Lost — unlike
     // Update mode's continuous, visible tracking, this just grabs a single fix (or gives up after
     // 10s) so every mode can stamp last_known_* on commit without showing any GPS UI. No-ops if
     // permission isn't granted, or if this session already has a fix (e.g. Update mode's own
@@ -416,12 +447,10 @@ class ScanViewModel @Inject constructor(
                 val assetItems    = allItems.filter { it.asset != null }
                 val unknownItems  = allItems.filter { it.isUnknown }
                 val performedById = performedBy.clerkUserId ?: performedBy.id
-                // rent_out details were collected up front on RentDetailsScreen, before scanning
-                // started, and hang off session state rather than any one scanned item.
-                val dueDateIso = _state.value.rentalDueDateMillis
+                // Bulk Check-Out's "estimated return date" — collected on ReturnDateSelectScreen,
+                // after scanning, immediately before this commit.
+                val expectedReturnDateIso = _state.value.expectedReturnDateMillis
                     ?.let { java.time.Instant.ofEpochMilli(it).toString() }
-                val renterName = _state.value.renterName
-                val renterContact = _state.value.renterContact.ifBlank { null }
 
                 // Container commits also apply to every asset inside them — those assets are
                 // NOT processed again individually below, even if they were somehow also scanned.
@@ -433,33 +462,35 @@ class ScanViewModel @Inject constructor(
                     // runs, so it picks them up as members (this also "moves" them out of
                     // whatever container/session item they were in before).
                     item.pendingAssets.forEach { asset ->
-                        repository.addAssetToContainer(asset.assetId, container.container.id, performedBy)
+                        offlineRepository.addAssetToContainer(asset.assetId, container.container.id, performedBy)
                     }
 
-                    val operationMode = when (mode) {
-                        "check_out" -> "check_out"
-                        "check_in"  -> "check_in"
-                        "update"    -> "update_location"
-                        "rent_out"  -> "rent_out"
+                    // check_out/check_in/update all go through the offline queue (survives no
+                    // connectivity) — every mode that reaches commitSession maps to one of these.
+                    val offlineOperationType = when (mode) {
+                        "check_out" -> "CONTAINER_CHECK_OUT"
+                        "check_in"  -> "CONTAINER_CHECK_IN"
+                        "update"    -> "CONTAINER_UPDATE"
                         else        -> null
-                    } ?: return@forEach
-                    repository.commitContainerOperation(
-                        containerId = container.container.id,
-                        mode        = operationMode,
-                        locationId  = when (mode) {
-                            "check_in"  -> _state.value.locationId
-                            "check_out", "rent_out" -> null
-                            else        -> container.container.currentLocationId
-                        },
-                        userId        = performedById,
-                        userName      = performedBy.name,
-                        gpsLat        = _state.value.gpsLat,
-                        gpsLng        = _state.value.gpsLng,
-                        gpsAddress    = _state.value.gpsAddress,
-                        holderName    = if (mode == "rent_out") renterName else null,
-                        renterContact = if (mode == "rent_out") renterContact else null,
-                        rentalDueDate = if (mode == "rent_out") dueDateIso else null
-                    )
+                    }
+
+                    if (offlineOperationType != null) {
+                        offlineRepository.commitContainerOperation(
+                            operationType = offlineOperationType,
+                            containerId   = container.container.id,
+                            locationId    = when (mode) {
+                                "check_in"  -> _state.value.locationId
+                                "check_out" -> null
+                                else        -> container.container.currentLocationId
+                            },
+                            locationName  = null,
+                            gpsLat        = _state.value.gpsLat,
+                            gpsLng        = _state.value.gpsLng,
+                            gpsAddress    = _state.value.gpsAddress,
+                            performedBy   = performedBy,
+                            expectedReturnDate = if (mode == "check_out") expectedReturnDateIso else null
+                        )
+                    }
                 }
 
                 val containerAssetIds = containerItems
@@ -471,65 +502,42 @@ class ScanViewModel @Inject constructor(
                     .filter { it.asset!!.assetId !in containerAssetIds }
                     .forEach { item ->
                         val asset = item.asset!!
-                        val (newStatus, eventType) = when (mode) {
-                            "check_out" -> "checked_out" to "checkout"
-                            "check_in"  -> "available"   to "checkin"
-                            "update"    -> asset.status  to "location"
-                            "mark_lost" -> "lost"        to "lost"
-                            "rent_out"  -> "rented"      to "rented"
-                            else        -> asset.status  to "inquiry"
+
+                        // check_out/check_in/update/mark_lost all go through the offline queue
+                        // (survives no connectivity) — every mode that reaches commitSession maps
+                        // to one of these.
+                        val offlineOperationType = when (mode) {
+                            "check_out" -> "CHECK_OUT"
+                            "check_in"  -> "CHECK_IN"
+                            "update"    -> "UPDATE_LOCATION"
+                            "mark_lost" -> "MARK_LOST"
+                            else        -> null
                         }
-                        repository.updateAssetStatus(
-                            assetId    = asset.assetId,
-                            status     = newStatus,
-                            locationId = when (mode) {
-                                "check_in"  -> _state.value.locationId
-                                "check_out", "rent_out" -> null
-                                else        -> asset.currentLocationId
-                            },
-                            // Only check-out/rent-out assign a holder and check-in clears one;
-                            // every other mode (update, mark_lost, inquiry) must leave the
-                            // existing holder alone — an asset stays "with" whoever has it until
-                            // it's actually checked back in.
-                            userId   = when (mode) {
-                                "check_out" -> performedBy.id
-                                "check_in"  -> null
-                                "rent_out"  -> null
-                                else        -> asset.currentUserId
-                            },
-                            userName = when (mode) {
-                                "check_out" -> performedBy.name
-                                "check_in"  -> null
-                                "rent_out"  -> renterName
-                                else        -> asset.currentUserName
-                            },
-                            renterContact = when (mode) {
-                                "rent_out"                -> renterContact
-                                "check_in", "check_out"   -> null
-                                else                       -> asset.renterContact
-                            },
-                            rentalDueDate = when (mode) {
-                                "rent_out"                -> dueDateIso
-                                "check_in", "check_out"   -> null
-                                else                       -> asset.rentalDueDate
-                            },
-                            gpsLat     = _state.value.gpsLat,
-                            gpsLng     = _state.value.gpsLng,
-                            gpsAddress = _state.value.gpsAddress
-                        )
-                        repository.insertEvent(
-                            InventoryEventInsert(
-                                assetId         = asset.assetId,
-                                eventType       = eventType,
-                                performedBy     = performedById,
-                                performedByName = performedBy.name,
-                                locationId      = _state.value.locationId,
-                                gpsLat          = _state.value.gpsLat,
-                                gpsLng          = _state.value.gpsLng,
-                                gpsAddress      = _state.value.gpsAddress
+
+                        if (offlineOperationType != null) {
+                            offlineRepository.commitAssetOperation(
+                                operationType = offlineOperationType,
+                                assetId       = asset.assetId,
+                                locationId    = when (mode) {
+                                    "check_in"  -> _state.value.locationId
+                                    "check_out" -> null
+                                    else        -> asset.currentLocationId
+                                },
+                                locationName  = null,
+                                gpsLat        = _state.value.gpsLat,
+                                gpsLng        = _state.value.gpsLng,
+                                gpsAddress    = _state.value.gpsAddress,
+                                performedBy   = performedBy,
+                                expectedReturnDate = if (mode == "check_out") expectedReturnDateIso else null
                             )
-                        )
+                        }
                     }
+
+                // Bulk Check-In commits every scanned item to a single location — resolve its
+                // name once here, purely for CommitResultScreen's summary copy.
+                val committedLocationName = if (mode == "check_in") {
+                    _state.value.locationId?.let { locId -> offlineRepository.getLocationById(locId)?.name }
+                } else null
 
                 val committedItems = containerItems + assetItems
                 _state.value = _state.value.copy(
@@ -539,7 +547,8 @@ class ScanViewModel @Inject constructor(
                     scannedItems   = emptyList(),
                     mode           = null,
                     scannerType    = null,
-                    expandedContainerRawCode = null
+                    expandedContainerRawCode = null,
+                    committedLocationName = committedLocationName
                 )
                 onSuccess(committedItems.size)
             } catch (e: Exception) {
@@ -553,5 +562,160 @@ class ScanViewModel @Inject constructor(
 
     fun resetSession() {
         _state.value = ScanUiState()
+    }
+
+    // ── Single-item, repeating "Check-In" mode (mode key "check_in_repeat") ────────────────────
+    // SCANNING_ITEM -> SCANNING_LOCATION -> auto-commit that pair -> back to SCANNING_ITEM,
+    // looping until the user taps "Done" (finishRepeatCheckIn). Distinct from the bulk check_in
+    // flow above, which stays on processScannedCode/commitSession.
+
+    fun processRepeatCheckInItemScan(code: String) {
+        val trimmed = code.trim()
+        if (trimmed.isEmpty() || _state.value.repeatCheckInStep != RepeatCheckInStep.SCANNING_ITEM) return
+        viewModelScope.launch {
+            try {
+                val asset = offlineRepository.getAssetByCode(trimmed)
+                if (asset != null) {
+                    _state.value = _state.value.copy(
+                        repeatCheckInPendingAsset = asset,
+                        repeatCheckInStep = RepeatCheckInStep.SCANNING_LOCATION,
+                        flash = ScanFlash.FOUND
+                    )
+                } else {
+                    _state.value = _state.value.copy(
+                        flash = ScanFlash.NOT_FOUND,
+                        repeatCheckInResult = RepeatCheckInResult.Invalid("Not a known asset: $trimmed")
+                    )
+                }
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(
+                    flash = ScanFlash.NOT_FOUND,
+                    repeatCheckInResult = RepeatCheckInResult.Invalid("Not a known asset: $trimmed")
+                )
+            }
+        }
+    }
+
+    fun processRepeatCheckInLocationScan(code: String) {
+        val trimmed = code.trim()
+        if (trimmed.isEmpty() || _state.value.repeatCheckInStep != RepeatCheckInStep.SCANNING_LOCATION) return
+        viewModelScope.launch {
+            try {
+                val result = offlineRepository.getLocationByCode(trimmed)
+                if (result != null) {
+                    commitRepeatCheckInPair(result.location)
+                } else {
+                    _state.value = _state.value.copy(
+                        flash = ScanFlash.NOT_FOUND,
+                        repeatCheckInResult = RepeatCheckInResult.Invalid("Unknown location: $trimmed")
+                    )
+                }
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(
+                    flash = ScanFlash.NOT_FOUND,
+                    repeatCheckInResult = RepeatCheckInResult.Invalid("Unknown location: $trimmed")
+                )
+            }
+        }
+    }
+
+    // Dropdown-picker fallback for SCANNING_LOCATION, alongside the scan/manual-entry path above.
+    fun selectRepeatCheckInLocation(location: LocationModel) {
+        if (_state.value.repeatCheckInStep != RepeatCheckInStep.SCANNING_LOCATION) return
+        viewModelScope.launch { commitRepeatCheckInPair(location) }
+    }
+
+    private suspend fun commitRepeatCheckInPair(location: LocationModel) {
+        val asset = _state.value.repeatCheckInPendingAsset ?: return
+        val member = currentMember.first() ?: return
+        _state.value = _state.value.copy(isCommitting = true)
+        try {
+            offlineRepository.commitAssetOperation(
+                operationType = "CHECK_IN",
+                assetId       = asset.assetId,
+                locationId    = location.id,
+                locationName  = location.name,
+                gpsLat        = _state.value.gpsLat,
+                gpsLng        = _state.value.gpsLng,
+                gpsAddress    = _state.value.gpsAddress,
+                performedBy   = member
+            )
+            // Snapshot is the asset AS FETCHED at the item-scan step, i.e. its state immediately
+            // before this check-in — exactly what an undo needs to restore.
+            val pair = RepeatCheckInPair(
+                asset = asset,
+                location = location,
+                previousStatus = asset.status,
+                previousLocationId = asset.currentLocationId,
+                previousUserId = asset.currentUserId,
+                previousUserName = asset.currentUserName,
+                previousExpectedReturnDate = asset.expectedReturnDate
+            )
+            _state.value = _state.value.copy(
+                repeatCheckInPairs = listOf(pair) + _state.value.repeatCheckInPairs,
+                repeatCheckInPendingAsset = null,
+                repeatCheckInStep = RepeatCheckInStep.SCANNING_ITEM,
+                isCommitting = false,
+                flash = ScanFlash.FOUND,
+                repeatCheckInResult = RepeatCheckInResult.Success(pair)
+            )
+        } catch (e: Exception) {
+            _state.value = _state.value.copy(
+                isCommitting = false,
+                commitError  = e.message ?: "Check-in failed",
+                repeatCheckInResult = RepeatCheckInResult.Invalid(e.message ?: "Check-in failed")
+            )
+        }
+    }
+
+    // Clears the transient floating-card result — called by RepeatCheckInScreen after its brief
+    // display delay, same pattern as clearFlash().
+    fun clearRepeatCheckInResult() {
+        _state.value = _state.value.copy(repeatCheckInResult = null)
+    }
+
+    // Undoes one committed pair from this session's running log — restores the asset to exactly
+    // what it was before that check-in (see InventoryRepository.revertCheckIn) and removes the
+    // row from the log. The audit trail itself isn't touched; this appends a correction event
+    // rather than deleting the original "checkin" event.
+    fun revertRepeatCheckInPair(pair: RepeatCheckInPair) {
+        viewModelScope.launch {
+            val member = currentMember.first() ?: return@launch
+            try {
+                offlineRepository.revertCheckIn(
+                    assetId = pair.asset.assetId,
+                    previousStatus = pair.previousStatus,
+                    previousLocationId = pair.previousLocationId,
+                    previousUserId = pair.previousUserId,
+                    previousUserName = pair.previousUserName,
+                    previousExpectedReturnDate = pair.previousExpectedReturnDate,
+                    performedBy = member
+                )
+                _state.value = _state.value.copy(
+                    repeatCheckInPairs = _state.value.repeatCheckInPairs.filter { it.committedAt != pair.committedAt }
+                )
+            } catch (e: Exception) {
+                _snackbarMessage.tryEmit(e.message ?: "Failed to revert check-in")
+            }
+        }
+    }
+
+    // "Done" — ends the session. Committed pairs are mapped into committedItems so
+    // CommitResultScreen (shared with every other mode) can render them unchanged.
+    fun finishRepeatCheckIn(onDone: (Int) -> Unit) {
+        val committedItems = _state.value.repeatCheckInPairs.map { pair ->
+            ScannedItem(asset = pair.asset, rawCode = pair.asset.assetId)
+        }
+        _state.value = _state.value.copy(
+            committedItems = committedItems,
+            skippedItems = emptyList(),
+            repeatCheckInPairs = emptyList(),
+            repeatCheckInPendingAsset = null,
+            repeatCheckInStep = RepeatCheckInStep.SCANNING_ITEM,
+            repeatCheckInResult = null,
+            mode = null,
+            scannerType = null
+        )
+        onDone(committedItems.size)
     }
 }

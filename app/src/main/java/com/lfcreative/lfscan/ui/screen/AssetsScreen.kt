@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -56,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import com.lfcreative.lfscan.ui.theme.LocalExtendedColors
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -82,6 +85,7 @@ fun AssetsScreen(
     onBack: () -> Unit,
     onNavigateToAsset: (String) -> Unit,
     onNavigateToCreateAsset: () -> Unit,
+    onQuickScan: () -> Unit,
     viewModel: AssetsViewModel = hiltViewModel()
 ) {
     val filteredAssets by viewModel.filteredAssets.collectAsState()
@@ -125,11 +129,18 @@ fun AssetsScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onNavigateToCreateAsset,
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("New Asset") }
-            )
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ExtendedFloatingActionButton(
+                    onClick = onQuickScan,
+                    icon = { Icon(Icons.Default.QrCodeScanner, contentDescription = null) },
+                    text = { Text("Scan") }
+                )
+                ExtendedFloatingActionButton(
+                    onClick = onNavigateToCreateAsset,
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text("New Asset") }
+                )
+            }
         }
     ) { padding ->
         Column(
@@ -225,21 +236,32 @@ internal fun AssetCard(
     // Opt-in only (ContainerDetailScreen's asset list) — the plain Assets list is unchanged.
     showLastKnownLocation: Boolean = false
 ) {
+    val extendedColors = LocalExtendedColors.current
+    val overdue = asset.status == "rented" && isRentalOverdue(asset.rentalDueDate)
     val leftBarColor = when (asset.status) {
-        "available"   -> Color(0xFF4ade80)
-        "checked_out" -> Color(0xFFf59e0b)
-        "rented"      -> if (isRentalOverdue(asset.rentalDueDate)) Color(0xFFef4444) else Color(0xFFa855f7)
-        "lost"        -> Color(0xFFef4444)
-        "repair"      -> Color(0xFF9ca3af)
-        else          -> Color(0xFF9ca3af)
+        "available"   -> extendedColors.green
+        "checked_out" -> extendedColors.amber
+        "rented"      -> if (overdue) extendedColors.red else extendedColors.purple
+        "lost"        -> extendedColors.red
+        "repair"      -> extendedColors.grey
+        else          -> extendedColors.grey
     }
-    val displayId = if (asset.assetId.length > 4) asset.assetId.take(4) + ".." else asset.assetId
-
+    // The rented line below already spells out status in text for "rented"; every other status
+    // only had this color bar to go on (WCAG 1.4.1 — color can't be the only cue), so give those
+    // a small text badge too.
+    val statusLabel = when (asset.status) {
+        "available"   -> "Available"
+        "checked_out" -> "Checked Out"
+        "lost"        -> "Lost"
+        "repair"      -> "Repair"
+        "rented"      -> null
+        else          -> asset.status.replaceFirstChar { it.uppercase() }
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(0.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -258,11 +280,15 @@ internal fun AssetCard(
             )
 
             Text(
-                displayId,
-                fontFamily = FontFamily.Monospace,
+                asset.assetId,
+                fontFamily = com.lfcreative.lfscan.ui.theme.AppMonospaceFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 20.sp,
-                modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 12.dp, bottom = 12.dp)
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .widthIn(max = 110.dp)
+                    .padding(start = 10.dp, end = 6.dp, top = 12.dp, bottom = 12.dp)
             )
 
             Column(
@@ -272,7 +298,7 @@ internal fun AssetCard(
             ) {
                 Text(
                     asset.name,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -295,15 +321,25 @@ internal fun AssetCard(
                     }
                 }
                 if (asset.status == "rented") {
-                    val overdue = isRentalOverdue(asset.rentalDueDate)
                     Text(
                         "Rented to ${asset.currentUserName ?: "?"} · Due ${formatRentalDueDate(asset.rentalDueDate)}" +
                             if (overdue) " (Overdue)" else "",
                         fontSize = 11.sp,
-                        color = if (overdue) Color(0xFFef4444) else Color(0xFFa855f7),
+                        color = if (overdue) extendedColors.red else extendedColors.purple,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
+            }
+
+            statusLabel?.let { label ->
+                Box(
+                    modifier = Modifier
+                        .padding(end = 12.dp)
+                        .background(leftBarColor.copy(alpha = 0.15f), RoundedCornerShape(0.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = leftBarColor)
                 }
             }
         }

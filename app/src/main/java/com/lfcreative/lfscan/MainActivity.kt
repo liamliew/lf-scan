@@ -18,9 +18,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
+import com.lfcreative.lfscan.data.HardwareScanEventBus
 import com.lfcreative.lfscan.data.repository.InventoryRepository
 import com.lfcreative.lfscan.session.SessionDataStore
 import com.lfcreative.lfscan.ui.navigation.LFScanNavGraph
+import com.lfcreative.lfscan.ui.screen.DataWedgeManager
 import com.lfcreative.lfscan.ui.theme.LFScanTheme
 import com.lfcreative.lfscan.ui.theme.ThemeMode
 import com.lfcreative.lfscan.ui.theme.resolveDarkTheme
@@ -36,6 +38,7 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var sessionDataStore: SessionDataStore
     @Inject lateinit var repository: InventoryRepository
+    @Inject lateinit var hardwareScanEventBus: HardwareScanEventBus
 
     companion object {
         private const val TAG = "LFScan_Scanner"
@@ -141,6 +144,16 @@ class MainActivity : ComponentActivity() {
                     Log.d(TAG, "PIN intent: $barcode")
                     onPinBarcodeScanned?.invoke(barcode)
                 }
+                else -> {
+                    // No active scan session claimed it (Mode Select, Assets list, Locations
+                    // list, Settings, ...) — this IS the fix for "the physical trigger does
+                    // nothing outside a mode": publish it for the global Inquiry popup instead of
+                    // silently dropping it. This receiver already runs at the Activity level
+                    // regardless of which screen is showing (registered in onResume), so nothing
+                    // extra is needed to make it "global" — the gap was only in this routing.
+                    Log.d(TAG, "Unclaimed scan intent -> global inquiry: $barcode")
+                    hardwareScanEventBus.emit(barcode)
+                }
             }
         }
 
@@ -164,6 +177,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         configureDataWedge()
+
+        // Resume the internal (TC15) scanner plugin once, globally, for the lifetime of the app.
+        // No screen calls suspendScanner() on teardown anymore (see each scan screen's
+        // DisposableEffect) — the physical trigger must never go dead just because the user left
+        // whatever screen last used it, since the hardware trigger now works everywhere (see
+        // scanReceiver's "else" branch below).
+        DataWedgeManager(this).resumeScanner()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(screenReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)

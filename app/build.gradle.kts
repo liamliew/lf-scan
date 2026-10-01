@@ -114,4 +114,18 @@ dependencies {
 
     // Coil image loading
     implementation("io.coil-kt:coil-compose:2.7.0")
+
+    // Room (offline cache + pending-operation queue) — uses KSP (not kapt) since the project's
+    // annotation processing is already KSP-based for Hilt; functionally identical to kapt here.
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
+
+    // WorkManager (background sync of the offline queue)
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // JUnit — plain unit tests only (pure-Kotlin logic like LocationHierarchy), no Android
+    // framework dependency, so no Robolectric/instrumentation setup needed.
+    testImplementation("junit:junit:4.13.2")
 }

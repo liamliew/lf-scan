@@ -1,25 +1,37 @@
 package com.lfcreative.lfscan.ui.screen
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.PlaylistAddCheck
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.PinDrop
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,29 +46,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.lfcreative.lfscan.ui.theme.Amber
 import com.lfcreative.lfscan.ui.theme.Blue
 import com.lfcreative.lfscan.ui.theme.Green
 import com.lfcreative.lfscan.ui.theme.Grey
 import com.lfcreative.lfscan.ui.theme.Purple
+import com.lfcreative.lfscan.ui.theme.PurpleLight
 
 private data class ModeInfo(
     val key: String,
     val title: String,
     val description: String,
-    val color: Color
+    val color: Color,
+    val icon: ImageVector
 )
 
 private val modes = listOf(
-    ModeInfo("check_out", "Check Out", "Assign gear to yourself for a shoot", Blue),
-    ModeInfo("check_in",  "Check In",  "Return gear back to the studio",      Green),
-    ModeInfo("update",    "Update",    "Update where an asset is right now",  Purple),
-    ModeInfo("rent_out",  "Rent Out",  "Rent gear out to a client",           Amber),
-    ModeInfo("inquiry",   "Inquiry",   "Look up any asset by scanning its code", Grey)
+    ModeInfo("check_out", "Bulk Check-Out", "Scan a batch of gear, then set a return date", Blue, Icons.Default.FileUpload),
+    ModeInfo("check_in",  "Bulk Check-In",  "Scan a batch of gear, then choose its location", Green, Icons.Default.FileDownload),
+    ModeInfo("check_in_repeat", "Check-In", "Check gear in one item at a time",   Green, Icons.AutoMirrored.Filled.PlaylistAddCheck),
+    ModeInfo("update",    "Update",    "Update where an asset is right now",  Purple, Icons.Default.PinDrop),
+    ModeInfo("inquiry",   "Inquiry",   "Look up any asset by scanning code",  Grey, Icons.Default.QrCodeScanner)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,17 +78,25 @@ private val modes = listOf(
 fun ModeSelectScreen(
     onModeSelected: (String) -> Unit,
     onSignOut: () -> Unit,
+    onQuickScan: () -> Unit,
     viewModel: ModeSelectViewModel = hiltViewModel()
 ) {
     val member by viewModel.currentMember.collectAsState(initial = null)
     var showSettings by remember { mutableStateOf(false) }
 
     Scaffold(
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = onQuickScan,
+                icon = { Icon(Icons.Default.QrCodeScanner, contentDescription = null) },
+                text = { Text("Scan") }
+            )
+        },
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = member?.name ?: "LF Scan",
+                        text = member?.name ?: "LFC Asset Services",
                         fontWeight = FontWeight.SemiBold
                     )
                 },
@@ -103,6 +125,7 @@ fun ModeSelectScreen(
             Text(
                 "Select a mode to start scanning",
                 fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(4.dp))
@@ -137,45 +160,77 @@ private fun ModeCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = isSystemInDarkTheme()
+    val effectiveColor = if (mode.key == "update" && isDark) PurpleLight else mode.color
+
     Card(
         modifier = modifier
-            .height(140.dp)
+            .height(148.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(0.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+                .height(IntrinsicSize.Min)
         ) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
-                    .background(mode.color.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
+                    .width(6.dp)
+                    .fillMaxHeight()
+                    .background(effectiveColor)
+            )
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(16.dp)
-                        .background(mode.color, RoundedCornerShape(4.dp))
-                )
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    mode.title,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 16.sp,
-                    color = mode.color
-                )
-                Text(
-                    mode.description,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 16.sp
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(effectiveColor.copy(alpha = 0.12f), RoundedCornerShape(0.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = mode.icon,
+                            contentDescription = mode.title,
+                            tint = effectiveColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = mode.title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = mode.description,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 15.sp,
+                        maxLines = 2
+                    )
+                }
             }
         }
     }
